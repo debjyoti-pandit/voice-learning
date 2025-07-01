@@ -1,0 +1,296 @@
+<!-- New dialer page that can be instantiated with ?identity=<name> -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Twilio Browser Dialer (Multi-Identity)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/modern-normalize/2.0.0/modern-normalize.min.css"
+    />
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        padding: 2rem 15%;
+        text-align: center;
+      }
+      input[type="tel"] {
+        width: 100%;
+        padding: 0.5rem;
+        margin-top: 0.25rem;
+        font-size: 1rem;
+      }
+      button {
+        padding: 0.75rem 1.25rem;
+        margin-top: 1rem;
+        font-size: 1rem;
+        border: none;
+        border-radius: 0.5rem;
+        cursor: pointer;
+      }
+      #call-button {
+        background: #0d6efd;
+        color: #fff;
+      }
+      #hangup-button {
+        background: #dc3545;
+        color: #fff;
+      }
+      #hold-button {
+        background: #ffc107;
+        color: #000;
+      }
+      button[disabled] {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      #log {
+        white-space: pre-wrap;
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        font-size: 0.9rem;
+        text-align: left;
+        margin-top: 1.5rem;
+      }
+      .log-parent {
+        background-color: #fff3cd; /* Yellow */
+        padding: 0.5rem;
+        border-radius: 0.4rem;
+        margin-bottom: 0.5rem;
+      }
+      .log-child {
+        background-color: #d1e7dd; /* Green */
+        padding: 0.5rem;
+        border-radius: 0.4rem;
+        margin-bottom: 0.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Twilio Browser Dialer</h1>
+    <p id="identity-label"></p>
+
+    <input
+      id="phoneNumber"
+      type="tel"
+      placeholder="+918617020252"
+      value="+918617020252"
+    />
+
+    <button id="call-button">Call</button>
+    <button id="hangup-button" disabled>Hang Up</button>
+    <button id="hold-button" disabled>Hold</button>
+
+    <div id="log"></div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://sdk.twilio.com/js/client/v1.13/twilio.min.js"></script>
+    <script>
+      // Extract identity from query string (e.g., ?identity=alice)
+      const urlParams = new URLSearchParams(window.location.search);
+      const identity = urlParams.get("identity") || "anonymous";
+      document.getElementById("identity-label").textContent = `Identity: ${identity}`;
+
+      const socket = io();
+      const logEl = document.getElementById("log");
+      const callButton = document.getElementById("call-button");
+      const hangupButton = document.getElementById("hangup-button");
+      const holdButton = document.getElementById("hold-button");
+      const phoneInput = document.getElementById("phoneNumber");
+
+      let device = null;
+      let connection = null;
+      let childCallSid = null;
+      let parentCallSid = null; // will be set when we detect our own parent call
+      const relatedCallSids = new Set(); // Track call SIDs that belong to this dialer so we can show every subsequent event
+
+      const appendLog = (msg, type = null) => {
+        const time = new Date().toLocaleTimeString();
+        const div = document.createElement("div");
+        div.textContent = `${time} — ${msg}`;
+        if (type === "parent") {
+          div.classList.add("log-parent");
+        } else if (type === "child") {
+          div.classList.add("log-child");
+        }
+        logEl.appendChild(div);
+      };
+
+      async function initDialer() {
+        try {
+          appendLog("🔑 Fetching Twilio token...");
+          const res = await fetch(`/token?identity=${encodeURIComponent(identity)}`);
+          const data = await res.json();
+          const token = data.token;
+
+          appendLog("⚙️ Initializing Twilio.Device...");
+          device = new Twilio.Device(token, { debug: false });
+
+          device.on("ready", () => appendLog("✅ Dialer ready."));
+          device.on("error", (err) => appendLog(`❌ Dialer error: ${err.message}`));
+          device.on("connect", (conn) => {
+            appendLog("📞 Call connected.");
+            connection = conn;
+            hangupButton.disabled = false;
+            callButton.disabled = true;
+            holdButton.disabled = true;
+          });
+          device.on("disconnect", () => {
+            appendLog("📴 Call ended.");
+            connection = null;
+            hangupButton.disabled = true;
+            callButton.disabled = false;
+            holdButton.disabled = true;
+            childCallSid = null;
+            parentCallSid = null;
+          });
+          device.on("incoming", (conn) => {
+            appendLog("📥 Incoming call received.");
+            conn.accept();
+          });
+        } catch (err) {
+          appendLog(`❌ Error initializing dialer: ${err.message}`);
+        }
+      }
+
+      callButton.addEventListener("click", () => {
+        const phoneNumber = phoneInput.value.trim();
+        if (!phoneNumber) {
+          appendLog("⚠️ Please enter a phone number.");
+          return;
+        }
+
+        if (!device || device.status() !== "ready") {
+          appendLog("⚠️ Device not ready.");
+          return;
+        }
+
+        appendLog(`📲 Calling ${phoneNumber}...`);
+        connection = device.connect({ To: phoneNumber });
+      });
+
+      hangupButton.addEventListener("click", () => {
+        if (connection) {
+          appendLog("🔴 Hanging up...");
+          connection.disconnect();
+        }
+      });
+
+      holdButton.addEventListener("click", () => {
+        if (!childCallSid) {
+          appendLog("⚠️ Child Call SID not yet available.");
+          return;
+        }
+        appendLog("⏸️ Placing child call on hold...");
+        holdCall(childCallSid);
+      });
+
+      socket.on("call_event", (event) => {
+        const {
+          status,
+          from,
+          to,
+          note,
+          type,
+          sid,
+          parent_sid,
+          event: eventType,
+        } = event;
+
+        // Determine if this event belongs to *this* dialer instance --------------------------------
+        const identityTag = `client:${identity}`; // Twilio uses the pattern client:<identity>
+        const fromMatchesIdentity = from && from.includes(identityTag);
+        const toMatchesIdentity = to && to.includes(identityTag);
+
+        // A call is related if (a) either leg contains our identity OR (b) we have previously marked
+        // the SID (or its parent) as belonging to this dialer.
+        const isRelated =
+          fromMatchesIdentity ||
+          toMatchesIdentity ||
+          relatedCallSids.has(sid) ||
+          (parent_sid && relatedCallSids.has(parent_sid));
+
+        if (!isRelated) {
+          return; // Ignore unrelated events to keep the console clean
+        }
+
+        // Remember these SIDs for subsequent correlation
+        relatedCallSids.add(sid);
+        if (parent_sid) relatedCallSids.add(parent_sid);
+
+        // Capture the parent call SID once we have identified it as ours
+        if (type === "parent" && !parentCallSid) {
+          parentCallSid = sid;
+        }
+
+        // -------------------------------------------------------------------------------------------
+
+        if (eventType === "ring_duration") {
+          appendLog(`🛎️ ${type.toUpperCase()} call rang for: ${note}`);
+          return;
+        }
+
+        let callTypeLabel = type === "child" ? "CHILD" : "PARENT";
+        let logMessage = `[${callTypeLabel}] Event: ${status.toUpperCase()}`;
+
+        if (parent_sid) {
+          logMessage += ` | Parent SID: ${parent_sid}`;
+        }
+
+        if (note) {
+          logMessage += ` | Note: ${note}`;
+        }
+
+        logMessage += ` | Call SID: ${sid}`;
+
+        appendLog(logMessage, type);
+
+        if (
+          type === "child" &&
+          (status === "in-progress" || status === "answered")
+        ) {
+          holdButton.disabled = false;
+        }
+
+        if (
+          type === "parent" &&
+          (status === "in-progress" || status === "answered")
+        ) {
+          holdButton.disabled = true;
+        }
+      });
+
+      socket.on("child_call_sid", (data) => {
+        // Always track these SIDs so future events are captured
+        relatedCallSids.add(data.child_sid);
+        relatedCallSids.add(data.parent_sid);
+
+        // Capture child SID as soon as we can. If parent SID is not yet known,
+        // store it tentatively; we'll still overwrite once parent SID aligns.
+        if (!childCallSid && (!parentCallSid || data.parent_sid === parentCallSid)) {
+          childCallSid = data.child_sid;
+          appendLog(`🔗 Child Call SID received: ${childCallSid}`, "child");
+        }
+      });
+
+      function holdCall(childCallSid) {
+        fetch("/hold-call", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ child_call_sid: childCallSid }),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            appendLog(`ℹ️ Hold response: ${JSON.stringify(data)}`);
+          })
+          .catch((err) => {
+            appendLog(`❌ Hold request error: ${err.message}`);
+          });
+      }
+
+      initDialer();
+    </script>
+  </body>
+</html> 

@@ -1,0 +1,433 @@
+from flask import Flask, request, jsonify, Response, render_template, url_for
+from twilio.jwt.access_token import AccessToken
+from twilio.jwt.access_token.grants import VoiceGrant
+from twilio.twiml.voice_response import VoiceResponse
+from twilio.rest import Client
+from flask_socketio import SocketIO
+import time
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# 🔐 Twilio credentials
+TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
+TWILIO_API_KEY = os.getenv('TWILIO_API_KEY')
+TWILIO_API_SECRET = os.getenv('TWILIO_API_SECRET')
+CALLER_ID = os.getenv('CALLER_ID')
+TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
+TWIML_APP_SID = os.getenv('TWIML_APP_SID')
+TWIML_SECONDARY_APP_SID = os.getenv('TWIML_SECONDARY_APP_SID')
+
+CALL_LOGS = []
+client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+call_log = {}
+
+# === Application-level constants ===
+# No longer using call queue; hold is handled via conferences only
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+@app.route('/token', methods=['GET'])
+def token():
+    identity = request.args.get('identity', 'debjyoti-first-dialer-app')
+    token = AccessToken(
+        TWILIO_ACCOUNT_SID,
+        TWILIO_API_KEY,
+        TWILIO_API_SECRET,
+        identity=identity
+    )
+    voice_grant = VoiceGrant(
+        outgoing_application_sid=TWIML_APP_SID,
+        incoming_allow=True,
+    )
+    token.add_grant(voice_grant)
+
+    jwt_token = token.to_jwt()
+    if isinstance(jwt_token, bytes):
+        jwt_token = jwt_token.decode()
+
+    return jsonify(token=jwt_token, identity=identity)
+
+
+@app.route('/greeting', methods=['GET', 'POST'])
+def greeting():
+    resp = VoiceResponse()
+    resp.say("Thank you for calling! Have a great day.")
+    return Response(str(resp), mimetype='text/xml')
+
+
+@app.route('/voice', methods=['POST'])
+def voice():
+    to_number = request.values.get('To')
+    response = VoiceResponse()
+    if to_number:
+        dial = response.dial(
+            caller_id=CALLER_ID,
+            action=url_for('hangup_call', _external=True),
+            
+            method='POST',
+            timeout=20
+        )
+        dial.number(
+            to_number,
+            status_callback=url_for('call_events', _external=True),
+            status_callback_method='GET',
+            status_callback_event='initiated ringing answered completed',
+            url=url_for('greeting', _external=True)
+        )
+    else:
+        response.say("Thanks for calling!")
+    return Response(str(response), mimetype='text/xml')
+
+@app.route('/call-events', methods=['GET', 'POST'])
+def call_events():
+    sid = request.values.get('CallSid')
+    parent_sid = request.values.get('ParentCallSid')  # Distinguishes child calls
+    status = request.values.get('CallStatus')  # initiated, ringing, answered, completed, etc.
+    from_number = request.values.get('From')
+    to_number = request.values.get('To')
+    timestamp = time.time()
+    duration = request.values.get('CallDuration')  # Only present on completed
+
+    call_type = 'child' if parent_sid else 'parent'
+
+    # Emit Parent Call SID once when first observed
+    if call_type == 'parent':
+        if not call_log.get(sid, {}).get('parent_sid_emitted'):
+            socketio.emit("parent_call_sid", {"parent_sid": sid})
+            if sid not in call_log:
+                call_log[sid] = {}
+            call_log[sid]['parent_sid_emitted'] = True
+
+    if call_type == 'child':
+        if not call_log.get(parent_sid, {}).get('parent_sid_emitted'):
+            socketio.emit("parent_call_sid", {"parent_sid": parent_sid})
+            if parent_sid not in call_log:
+                call_log[parent_sid] = {}
+            call_log[parent_sid]['parent_sid_emitted'] = True
+            print(call_log)
+            
+        if not call_log.get(sid, {}).get('child_sid_emitted'):
+            socketio.emit("child_call_sid", {"child_sid": sid, "parent_sid": parent_sid})
+            if sid not in call_log:
+                call_log[sid] = {}
+            call_log[sid]['child_sid_emitted'] = True
+
+
+
+    log_key = sid
+
+    if log_key not in call_log:
+        call_log[log_key] = {
+            'sid': sid,
+            'parent_sid': parent_sid,
+            'type': call_type,
+            'events': [],
+            'ringing_time': None,
+            'answered_time': None,
+            'end_time': None,
+            'ring_duration_emitted': False
+        }
+    else:
+        # Fill in any missing keys without overwriting existing data
+        call_log[log_key].setdefault('sid', sid)
+        call_log[log_key].setdefault('parent_sid', parent_sid)
+        call_log[log_key].setdefault('type', call_type)
+        call_log[log_key].setdefault('events', [])
+        call_log[log_key].setdefault('ringing_time', None)
+        call_log[log_key].setdefault('answered_time', None)
+        call_log[log_key].setdefault('end_time', None)
+        call_log[log_key].setdefault('ring_duration_emitted', False)
+
+    # Store each event
+    call_log[log_key]['events'].append({
+        'status': status,
+        'from': from_number,
+        'to': to_number,
+        'timestamp': timestamp,
+        'duration': duration,
+    })
+
+    # Track specific times
+    if status == 'ringing':
+        call_log[log_key]['ringing_time'] = timestamp
+    elif status == 'answered':
+        call_log[log_key]['answered_time'] = timestamp
+    elif status in ['completed', 'no-answer', 'busy', 'failed']:
+        call_log[log_key]['end_time'] = timestamp
+
+    # General event emission
+    event_data = {
+        'sid': sid,
+        'parent_sid': parent_sid,
+        'status': status,
+        'from': from_number,
+        'to': to_number,
+        'timestamp': time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp)),
+        'type': call_type,
+    }
+
+    # Notes for regular statuses
+    if status == 'answered':
+        event_data['note'] = f"{call_type.capitalize()} call answered"
+    elif status == 'ringing':
+        event_data['note'] = f"{call_type.capitalize()} call is ringing"
+    elif status == 'initiated':
+        event_data['note'] = f"{call_type.capitalize()} call initiated"
+    elif status == 'failed':
+        event_data['note'] = f"{call_type.capitalize()} call failed"
+    elif status == 'busy':
+        event_data['note'] = f"{call_type.capitalize()} call got busy signal"
+    elif status == 'no-answer':
+        event_data['note'] = f"{call_type.capitalize()} call not answered"
+    elif status == 'completed':
+        if duration and int(duration) > 0:
+            event_data['note'] = f"{call_type.capitalize()} call completed in {duration}s"
+        else:
+            event_data['note'] = f"{call_type.capitalize()} call completed (0s duration)"
+
+    socketio.emit("call_event", event_data)
+    print(f"📞 {call_type.upper()} CALL EVENT:", event_data)
+
+    if (
+        call_log[log_key]['ringing_time'] is not None and
+        call_log[log_key]['end_time'] is not None and
+        status in ['completed', 'no-answer', 'busy', 'failed'] and
+        not call_log[log_key]['ring_duration_emitted']
+    ):
+        ring_duration = round(
+            call_log[log_key]['end_time'] - call_log[log_key]['ringing_time']
+        )
+        ring_data = {
+            'sid': sid,
+            'parent_sid': parent_sid,
+            'type': call_type,
+            'timestamp': time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp)),
+            'note': f"{call_type.capitalize()} call rang for {ring_duration} seconds",
+            'event': 'ring_duration',
+        }
+        socketio.emit("call_event", ring_data)
+        call_log[log_key]['ring_duration_emitted'] = True
+        print(f"⏱️ RING DURATION EVENT:", ring_data)
+
+    return '', 204
+
+@app.route('/hold-call', methods=['POST'])
+def hold_call():
+    """Move CHILD leg into a hold-music conference and hang up the PARENT leg."""
+    data = request.json
+    print("📥 /hold-call payload:", data)
+
+    child_call_sid = data.get('child_call_sid')
+    parent_call_sid = data.get('parent_call_sid')
+    parent_target = data.get('parent_target')  # could be client:alice or phone number
+
+    if not child_call_sid or not parent_call_sid:
+        return jsonify({'error': 'Missing call SID(s)'}), 400
+
+    conference_name = f"CallRoom_{parent_call_sid}"
+
+    try:
+        # 1️⃣ Move the CHILD leg into the conference where they'll hear hold music
+        client.calls(child_call_sid).update(
+            url=url_for('join_conference', _external=True, conference_name=conference_name),
+            method='POST'
+        )
+
+        # 2️⃣ Hang up the PARENT leg so they are effectively on hold
+        client.calls(parent_call_sid).update(status='completed')
+
+        # 3️⃣ Cache the parent's phone/Client identity for later dial-back
+        parent_number = parent_target
+        if not parent_number and parent_call_sid in call_log:
+            events = call_log[parent_call_sid].get('events', [])
+            if events:
+                first_evt = events[0]
+                cand_from = first_evt.get('from')
+                cand_to = first_evt.get('to')
+
+                # Prefer the party that is NOT our Twilio caller ID
+                if cand_from and cand_from != CALLER_ID:
+                    parent_number = cand_from
+                elif cand_to and cand_to != CALLER_ID:
+                    parent_number = cand_to
+
+        if not parent_number:
+            # Fallback: fetch from Twilio API
+            try:
+                parent_number = client.calls(parent_call_sid).fetch().from_  # noqa: E501
+            except Exception:
+                pass
+
+        if parent_number:
+            call_log.setdefault(parent_call_sid, {})['parent_number'] = parent_number
+            print("⚠️ Parent target not determined; unhold may fail.")
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    return jsonify({'message': 'Child placed in conference; parent dropped'}), 200
+
+@app.route("/join_conference", methods=['POST', 'GET'])
+def join_conference():
+    conference_name = request.args.get('conference_name', 'DefaultRoom')
+
+    response = VoiceResponse()
+    
+    response.say("Your call is on hold. We will get back to you shortly.", voice='alice')
+
+    dial = response.dial()
+    dial.conference(
+        conference_name,
+        wait_url=url_for('hold_music', _external=True),
+        start_conference_on_enter=True,
+        end_conference_on_exit=True
+    )
+
+    return Response(str(response), mimetype='text/xml')
+
+@app.route('/unhold-call', methods=['POST'])
+def unhold_call():
+    """Dial the parent back into the conference they were originally on and play an unhold greeting."""
+    data = request.json
+    parent_call_sid = data.get('parent_call_sid')
+    conference_friendly_name = f"CallRoom_{parent_call_sid}"
+    print(conference_friendly_name)
+    print(parent_call_sid)
+    print(data)
+
+    # Retrieve cached parent number
+    parent_number = call_log.get(parent_call_sid, {}).get('parent_number')
+    print(parent_number)
+
+    if not parent_number:
+        return jsonify({'error': 'Parent number not found for given SID'}), 400
+
+    # 🔍 1) Retrieve the actual conference SID
+    # Retry a few times because the conference resource may take a moment to appear
+    conf_sid = None
+    for _ in range(5):  # up to ~5 seconds total wait
+        try:
+            conferences = client.conferences.list(
+                friendly_name=conference_friendly_name,
+                status='in-progress',  # only look for active conferences
+                limit=1
+            )
+            if conferences:
+                conf_sid = conferences[0].sid
+                break
+        except Exception as e:
+            # If Twilio API is temporarily unavailable, keep trying
+            print(f"⚠️ Error while searching for conference: {e}. Retrying…")
+        time.sleep(1)  # small delay before next attempt
+
+    print(conf_sid)
+    if not conf_sid:
+        return jsonify({'error': 'Conference not found or not in progress'}), 404
+
+    try:
+        participants = client.conferences(conf_sid).participants.list(limit=20)
+        print(participants)
+        for participant in participants:
+            print(participant)
+            # Play a greeting to each existing participant by temporarily
+            # redirecting their leg; after the greeting they immediately
+            # re-join the same conference.
+            play_greeting_to_participant(participant.call_sid, conference_friendly_name)
+    except Exception as ann_e:
+        print(f"⚠️ Could not play greeting to child leg: {ann_e}")
+
+    try:
+        client.calls.create(
+            url=url_for('connect_to_conference', _external=True, conference_name=conference_friendly_name),
+            to=parent_number,
+            from_=CALLER_ID
+        )
+        return jsonify({'message': 'Parent re-dialed into conference'}), 200
+    except Exception as e:
+        return jsonify({'error': f'Failed to redial parent: {e}'}), 500
+    
+# ngrok http --url=dynamic-hog-vast.ngrok-free.app 80
+
+@app.route("/hold-music", methods=["GET", "POST"])
+def hold_music():
+    response = VoiceResponse()
+    response.play("https://com.twilio.music.classical.s3.amazonaws.com/BusyStrings.mp3", loop=0)
+    return Response(str(response), mimetype='text/xml')
+
+@app.route("/connect_to_conference", methods=["POST", "GET"])
+def connect_to_conference():
+    conference_name = request.args.get("conference_name", "DefaultRoom")
+
+    response = VoiceResponse()
+    dial = response.dial()
+    dial.conference(
+        conference_name,
+        start_conference_on_enter=True,
+        end_conference_on_exit=True
+    )
+    return Response(str(response), mimetype="text/xml")
+
+
+@app.route('/conference-announcement', methods=['POST', 'GET'])
+def conference_announcement():
+    response = VoiceResponse()
+    response.say("You are being joined back into the call.", voice='alice', language='en-US')
+    return str(response), 200, {'Content-Type': 'application/xml'}
+
+
+@app.route('/hangup', methods=['GET', 'POST'])
+def hangup_call():
+    resp = VoiceResponse()
+    resp.hangup()
+    return Response(str(resp), mimetype='text/xml')
+
+@app.route("/answer", methods=['GET', 'POST'])
+def answer_call():
+    resp = VoiceResponse()
+    resp.say("Thank you for calling! Have a great day.")
+    return Response(str(resp), mimetype='text/xml')
+
+@app.route('/dialer')
+def dialer():
+    """Serve a dialer page that can be instantiated with a custom identity.
+
+    Access via /dialer?identity=alice or /dialer?identity=bob to spin up
+    separate browser dialers whose logs are filtered to their respective calls.
+    """
+    return render_template('dialer.html')
+
+@app.route("/greet_then_rejoin", methods=['GET', 'POST'])
+def greet_then_rejoin():
+    """TwiML endpoint: plays a short greeting, then dials the caller
+    back into the same conference specified via ?conference_name=..."""
+    conference_name = request.args.get('conference_name', 'DefaultRoom')
+
+    vr = VoiceResponse()
+    vr.say("You are being joined back into the call.", voice='alice', language='en-US')
+
+    dial = vr.dial()
+    dial.conference(
+        conference_name,
+        start_conference_on_enter=True,
+        end_conference_on_exit=True,
+    )
+    return Response(str(vr), mimetype='text/xml')
+
+# Utility ---------------------------------------------------------------------
+
+def play_greeting_to_participant(participant_call_sid: str, conference_name: str):
+    """Redirect a single call leg so it hears the greeting then re-joins."""
+    greeting_url = url_for('greet_then_rejoin', conference_name=conference_name, _external=True)
+    # Send the participant to the greeting TwiML, using POST so we can easily
+    # include longer bodies later if desired.
+    client.calls(participant_call_sid).update(url=greeting_url, method='POST')
+
+if __name__ == '__main__':
+  socketio.run(app, host='0.0.0.0', port=5678, debug=True)
