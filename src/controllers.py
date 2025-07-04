@@ -1,17 +1,14 @@
 from flask import Blueprint, request, jsonify, Response, render_template, url_for, current_app
-from twilio.jwt.access_token import AccessToken
-from twilio.jwt.access_token.grants import VoiceGrant
 from twilio.twiml.voice_response import VoiceResponse
 from twilio.rest import Client
 from dotenv import load_dotenv
-from src.call_events_handler import handle_call_events
+from src.call_events_handler import CallEventsHandler, handle_call_events
 import os
 import time
 
 # Load environment variables (in case app.py didn't already)
 load_dotenv()
 
-# Blueprint definition -------------------------------------------------------
 api_bp = Blueprint('api', __name__)
 
 # 🔐 Twilio credentials
@@ -20,88 +17,28 @@ TWILIO_API_KEY = os.getenv('TWILIO_API_KEY')
 TWILIO_API_SECRET = os.getenv('TWILIO_API_SECRET')
 CALLER_ID = os.getenv('CALLER_ID')
 TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
-TWIML_APP_SID = os.getenv('TWIML_APP_SID')
-TWIML_SECONDARY_APP_SID = os.getenv('TWIML_SECONDARY_APP_SID')
+# TWIML_APP_SID = os.getenv('TWIML_APP_SID')
+# TWIML_SECONDARY_APP_SID = os.getenv('TWIML_SECONDARY_APP_SID')
 
 client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
-# Shared in-memory store for call progress
 call_log = {}
 
-# ---------------------------------------------------------------------------
-# Utility helpers
-# ---------------------------------------------------------------------------
-
 def play_greeting_to_participant(participant_call_sid: str, conference_name: str):
-    """Redirect a single call leg so it hears the greeting then re-joins."""
+    """Redirect a single call leg so it hears the greeting and then re-joins the conference."""
     greeting_url = url_for('.greet_then_rejoin', conference_name=conference_name, _external=True)
     client.calls(participant_call_sid).update(url=greeting_url, method='POST')
-
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
 
 @api_bp.route('/')
 def index():
     return render_template('index.html')
 
 
-@api_bp.route('/token', methods=['GET'])
-def token():
-    identity = request.args.get('identity', 'debjyoti-dialer-app')
-    token = AccessToken(
-        TWILIO_ACCOUNT_SID,
-        TWILIO_API_KEY,
-        TWILIO_API_SECRET,
-        identity=identity,
-    )
-    voice_grant = VoiceGrant(outgoing_application_sid=TWIML_APP_SID, incoming_allow=True)
-    token.add_grant(voice_grant)
-
-    jwt_token = token.to_jwt()
-    if isinstance(jwt_token, bytes):
-        jwt_token = jwt_token.decode()
-
-    return jsonify(token=jwt_token, identity=identity)
-
-
-@api_bp.route('/greeting', methods=['GET', 'POST'])
-def greeting():
-    resp = VoiceResponse()
-    resp.say("Thank you for calling! Have a great day.")
-    return Response(str(resp), mimetype='text/xml')
-
-
-@api_bp.route('/voice', methods=['POST'])
-def voice():
-    to_number = request.values.get('To')
-    response = VoiceResponse()
-
-    if to_number:
-        dial = response.dial(
-            caller_id=CALLER_ID,
-            action=url_for('.hangup_call', _external=True),
-            method='POST',
-            timeout=20,
-        )
-        dial.number(
-            to_number,
-            status_callback=url_for('.call_events', _external=True),
-            status_callback_method='GET',
-            status_callback_event='initiated ringing answered completed',
-            url=url_for('.greeting', _external=True),
-        )
-    else:
-        response.say("Thanks for calling!")
-
-    return Response(str(response), mimetype='text/xml')
-
-
 @api_bp.route('/call-events', methods=['GET', 'POST'])
 def call_events():
     """Delegates to shared handler while accessing Socket.IO via app config."""
     socketio = current_app.config['socketio']
-    return handle_call_events(request, socketio, call_log)
+    return CallEventsHandler(socketio, call_log).handle(request) 
 
 
 @api_bp.route('/hold-call', methods=['POST'])

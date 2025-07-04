@@ -9,9 +9,7 @@ class CallEventsHandler:
         self.socketio = socketio
         self.call_log = call_log
 
-    # ------------------------------------------------------------------
-    # Public entry-point
-    # ------------------------------------------------------------------
+
     def handle(self, flask_request):
         """Process the incoming Flask request and emit events."""
         sid = flask_request.values.get('CallSid')
