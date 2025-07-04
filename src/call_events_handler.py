@@ -26,7 +26,7 @@ class CallEventsHandler:
 
         log_key = self._ensure_log_entry(sid, parent_sid, call_type)
 
-        # Store this individual event
+                                     
         self.call_log[log_key]['events'].append({
             'status': status,
             'from': from_number,
@@ -35,7 +35,7 @@ class CallEventsHandler:
             'duration': duration,
         })
 
-        # Track specific timestamps
+                                   
         if status == 'ringing':
             self.call_log[log_key]['ringing_time'] = timestamp
         elif status == 'answered':
@@ -43,26 +43,26 @@ class CallEventsHandler:
         elif status in ['completed', 'no-answer', 'busy', 'failed']:
             self.call_log[log_key]['end_time'] = timestamp
 
-        # Emit general event
+                            
         self._emit_status_event(call_type, sid, parent_sid, status, from_number, to_number, timestamp, duration)
 
-        # Maybe emit ring-duration event
+                                        
         self._maybe_emit_ring_duration(log_key, call_type, sid, parent_sid, timestamp)
 
         return '', 204
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
+                                                                        
+                      
+                                                                        
 
     def _emit_parent_child_sids(self, call_type: str, sid: str, parent_sid: str | None):
-        # Parent SID emission
+                             
         if call_type == 'parent':
             if not self.call_log.get(sid, {}).get('parent_sid_emitted'):
                 self.socketio.emit("parent_call_sid", {"parent_sid": sid})
                 self.call_log.setdefault(sid, {})['parent_sid_emitted'] = True
 
-        # Child SID emission
+                            
         if call_type == 'child':
             if not self.call_log.get(parent_sid, {}).get('parent_sid_emitted'):
                 self.socketio.emit("parent_call_sid", {"parent_sid": parent_sid})

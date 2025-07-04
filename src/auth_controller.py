@@ -8,7 +8,7 @@ load_dotenv()
 
 auth_bp = Blueprint('auth', __name__)
 
-# Twilio credentials -------------------------------------------------------
+                                                                            
 TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
 TWILIO_API_KEY = os.getenv('TWILIO_API_KEY')
 TWILIO_API_SECRET = os.getenv('TWILIO_API_SECRET')

@@ -24,7 +24,7 @@ def hold_call():
     call_log = current_app.config['call_log']
     child_call_sid = data.get('child_call_sid')
     parent_call_sid = data.get('parent_call_sid')
-    parent_target = data.get('parent_target')  # could be client:alice or phone number
+    parent_target = data.get('parent_target')                                         
 
     if not child_call_sid or not parent_call_sid:
         return jsonify({'error': 'Missing call SID(s)'}), 400
@@ -32,16 +32,16 @@ def hold_call():
     conference_name = f"CallRoom_{parent_call_sid}"
 
     try:
-        # 1️⃣ Move the CHILD leg into the conference where they'll hear hold music
+                                                                                  
         client.calls(child_call_sid).update(
             url=url_for('.join_conference', _external=True, conference_name=conference_name),
             method='POST',
         )
 
-        # 2️⃣ Hang up the PARENT leg so they are effectively on hold
+                                                                    
         client.calls(parent_call_sid).update(status='completed')
 
-        # 3️⃣ Cache the parent's phone/Client identity for later dial-back
+                                                                          
         parent_number = parent_target
         if not parent_number and parent_call_sid in call_log:
             events = call_log[parent_call_sid].get('events', [])
@@ -55,7 +55,7 @@ def hold_call():
                     parent_number = cand_to
 
         if not parent_number:
-            # Fallback: fetch from Twilio API
+                                             
             try:
                 parent_number = client.calls(parent_call_sid).fetch().from_
             except Exception:
@@ -82,7 +82,7 @@ def unhold_call():
     if not parent_number:
         return jsonify({'error': 'Parent number not found for given SID'}), 400
 
-    # 🔍 Retrieve the actual conference SID (retry up to ~5 s)
+                                                             
     conf_sid = None
     for _ in range(5):
         try:
@@ -101,7 +101,7 @@ def unhold_call():
     if not conf_sid:
         return jsonify({'error': 'Conference not found or not in progress'}), 404
 
-    # Play greeting to existing participants
+                                            
     try:
         participants = client.conferences(conf_sid).participants.list(limit=20)
         for participant in participants:
@@ -109,7 +109,7 @@ def unhold_call():
     except Exception as err:
         current_app.logger.warning("Could not play greeting to child leg: %s", err)
 
-    # Dial the parent back
+                          
     try:
         client.calls.create(
             url=url_for('.connect_to_conference', _external=True, conference_name=conference_friendly_name),

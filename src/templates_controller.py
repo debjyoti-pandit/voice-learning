@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template
 
-# Blueprint serving simple HTML pages
+                                     
 templates_bp = Blueprint('templates', __name__)
 
 

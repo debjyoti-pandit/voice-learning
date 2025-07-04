@@ -2,7 +2,7 @@ from flask import Blueprint, request, current_app
 
 from src.call_events_handler import CallEventsHandler
 
-# Blueprint dedicated to Twilio status callbacks and related events
+                                                                   
 events_bp = Blueprint('events', __name__)
 
 
