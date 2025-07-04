@@ -123,11 +123,11 @@ def hold_call_via_conference():
     conference_name = f"debjyoti's-conference-with-{parent_name}"
     try:                                                         
         client.calls(child_call_sid).update(
-            url=url_for('conference.join_conference', _external=True, conference_name=conference_name),
+            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label='debjyoti'),
             method='POST',
         )
         client.calls(parent_call_sid).update(
-            url=url_for('conference.join_conference', _external=True, conference_name=conference_name),
+            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=parent_name),
             method='POST',
         )
 

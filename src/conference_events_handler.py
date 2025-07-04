@@ -17,6 +17,14 @@ class ConferenceEventsHandler:
         friendly_name = values.get("FriendlyName")
         sequence_number = values.get("SequenceNumber")
         timestamp = values.get("Timestamp")
+        participant_label = values.get("ParticipantLabel")
+        coaching = values.get("Coaching")
+        end_conference_on_exit = values.get("EndConferenceOnExit")
+        start_conference_on_enter = values.get("StartConferenceOnEnter")
+        hold = values.get("Hold")
+        muted = values.get("Muted")
+
+
 
         # Different callback types use different parameter names to reference the participant / call SIDs
         call_sid = (
@@ -29,12 +37,17 @@ class ConferenceEventsHandler:
 
         event_data = {
             "event": event_type,
-            "conference_sid": conference_sid,
             "conference_name": friendly_name,
             "sequence_number": sequence_number,
             "timestamp": timestamp,
             "call_sid": call_sid,
             "reason": reason,
+            "participant_label": participant_label,
+            "coaching": coaching,
+            "end_conference_on_exit": end_conference_on_exit,
+            "start_conference_on_enter": start_conference_on_enter,
+            "hold": hold,
+            "muted": muted,
         }
 
         # Strip keys whose value is None for a cleaner payload

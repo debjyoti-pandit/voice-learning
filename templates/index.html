@@ -339,13 +339,27 @@
           call_sid,
           status,
           note,
+          participant_label,
+          coaching,
+          end_conference_on_exit,
+          start_conference_on_enter,
+          hold,
+          muted,
+          reason,
+          sequence_number,
         } = event;
 
-        let msg = `[CONFERENCE] Event: ${evtType || status || "unknown"}`;
+        let msg = `(${sequence_number}) [${participant_label ?? "CONFERENCE"}] Event: ${evtType || status || "unknown"}`;
         if (conference_sid) msg += ` | Conf SID: ${conference_sid}`;
         if (participant_sid) msg += ` | Participant SID: ${participant_sid}`;
         if (call_sid) msg += ` | Call SID: ${call_sid}`;
         if (note) msg += ` | Note: ${note}`;
+        if (coaching) msg += ` | Coaching: ${coaching}`;
+        if (end_conference_on_exit) msg += ` | End Conference On Exit: ${end_conference_on_exit}`;
+        if (start_conference_on_enter) msg += ` | Start Conference On Enter: ${start_conference_on_enter}`;
+        if (hold) msg += ` | Hold: ${hold}`;
+        if (muted) msg += ` | Muted: ${muted}`;
+        if (reason) msg += ` | Reason: ${reason}`;
 
         appendLog(msg, "conference");
       });

@@ -24,6 +24,7 @@ def join_conference():
         status_callback=url_for('conference.conference_events', _external=True),
         status_callback_method='POST',
         status_callback_event='start end join leave hold mute',
+        participant_label=request.args.get('participant_label', 'DefaultParticipant')
     )
 
     return xml_response(response)
