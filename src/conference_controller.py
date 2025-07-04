@@ -1,4 +1,4 @@
-from flask import Blueprint, request, url_for
+from flask import Blueprint, current_app, jsonify, request, url_for
 from twilio.twiml.voice_response import VoiceResponse
 from dotenv import load_dotenv
 import os
@@ -14,15 +14,26 @@ CALLER_ID = os.getenv('CALLER_ID')
 def join_conference():
     conference_name = request.args.get('conference_name', 'DefaultRoom')
     response = VoiceResponse()
-    response.say("Your call is on hold. We will get back to you shortly.", voice='alice')
     dial = response.dial()
     dial.conference(
         conference_name,
-        wait_url=url_for('hold.hold_music', _external=True),
+        wait_url='http://twimlets.com/holdmusic?Bucket=com.twilio.music.silent',
         start_conference_on_enter=True,
         end_conference_on_exit=True,
+        status_callback=url_for('conference.conference_events', _external=True),
+        status_callback_method='POST',
+        status_callback_event='start end join leave hold mute',
     )
+
     return xml_response(response)
+
+@conference_bp.route('/conference-events', methods=['POST', 'GET'])
+def conference_events():
+    current_app.logger.info("📥 /conference-events request.values: %s", dict(request.values))
+    print("--------------------------------")
+    print(request.values)
+    print("--------------------------------")
+    return jsonify({'message': 'Conference events received'}), 200
 
 
 @conference_bp.route('/connect_to_conference', methods=['POST', 'GET'])

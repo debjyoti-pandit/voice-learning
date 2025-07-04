@@ -41,10 +41,43 @@ def hold_call():
             method='POST',
         )
 
-                                                                    
-        client.calls(parent_call_sid).update(status='completed')
+        # Redirect the **parent** leg into the same conference (they can speak)
+        client.calls(parent_call_sid).update(
+            url=url_for('conference.connect_to_conference', _external=True, conference_name=conference_name),
+            method='POST',
+        )
 
-                                                                          
+        # After both legs have been redirected, wait briefly for the conference to spin up
+        conf_sid = None
+        for _ in range(5):
+            try:
+                conferences = client.conferences.list(
+                    friendly_name=conference_name,
+                    status='in-progress',
+                    limit=1,
+                )
+                if conferences:
+                    conf_sid = conferences[0].sid
+                    break
+            except Exception as e:
+                current_app.logger.warning("Error while searching for conference: %s. Retrying…", e)
+            time.sleep(1)
+
+        # If we located the conference, put the CHILD leg on hold so they hear hold music
+        if conf_sid:
+            try:
+                participants = client.conferences(conf_sid).participants.list(limit=50)
+                for participant in participants:
+                    if participant.call_sid == child_call_sid:
+                        client.conferences(conf_sid).participants(participant.call_sid).update(
+                            hold=True,
+                            hold_url=url_for('hold.hold_music', _external=True),
+                            hold_method='POST',
+                        )
+                        break
+            except Exception as e:
+                current_app.logger.warning("Could not place child on hold: %s", e)
+
         parent_number = parent_target
         if not parent_number and parent_call_sid in call_log:
             events = call_log[parent_call_sid].get('events', [])
@@ -69,7 +102,69 @@ def hold_call():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-    return jsonify({'message': 'Child placed in conference; parent dropped'}), 200
+    return jsonify({'message': 'Child placed on hold; both legs in conference'}), 200
+
+
+@hold_bp.route('/hold-call-via-conference', methods=['POST'])
+def hold_call_via_conference():
+    data = request.get_json(silent=True)
+    if data is None:
+        return jsonify({'error': 'Invalid or missing JSON payload'}), 400
+    current_app.logger.info("📥 /hold-call-via-conference payload: %s", data)
+
+    client = current_app.config['twilio_client']
+    child_call_sid = data.get('child_call_sid')
+    parent_call_sid = data.get('parent_call_sid')
+    parent_name = data.get('parent_name')                                       
+
+    if not child_call_sid or not parent_call_sid:
+        return jsonify({'error': 'Missing call SID(s)'}), 400
+
+    conference_name = f"debjyoti's-conference-with-{parent_name}"
+    try:                                                         
+        client.calls(child_call_sid).update(
+            url=url_for('conference.join_conference', _external=True, conference_name=conference_name),
+            method='POST',
+        )
+        client.calls(parent_call_sid).update(
+            url=url_for('conference.join_conference', _external=True, conference_name=conference_name),
+            method='POST',
+        )
+
+        conf_sid = None
+        for _ in range(5):
+            try:
+                conferences = client.conferences.list(
+                    friendly_name=conference_name,
+                    status='in-progress',
+                    limit=1,
+                )
+                if conferences:
+                    conf_sid = conferences[0].sid
+                    break
+            except Exception as e:
+                current_app.logger.warning("Error while searching for conference: %s. Retrying…", e)
+            time.sleep(1)
+
+        # If we located the conference, put the CHILD leg on hold so they hear hold music
+        if conf_sid:
+            try:
+                participants = client.conferences(conf_sid).participants.list(limit=50)
+                for participant in participants:
+                    if participant.call_sid == child_call_sid:
+                        client.conferences(conf_sid).participants(participant.call_sid).update(
+                            hold=True,
+                            hold_url=url_for('hold.hold_music', _external=True),
+                            hold_method='POST',
+                        )
+                        break
+            except Exception as e:
+                current_app.logger.warning("Could not place child on hold: %s", e)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    return jsonify({'message': 'both legs in conference'}), 200
+
 
 
 @hold_bp.route('/unhold-call', methods=['POST'])

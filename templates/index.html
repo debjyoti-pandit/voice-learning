@@ -69,6 +69,12 @@
         border-radius: 0.4rem;
         margin-bottom: 0.5rem;
       }
+      .log-conference {
+        background-color: #cff4fc; /* Blue */
+        padding: 0.5rem;
+        border-radius: 0.4rem;
+        margin-bottom: 0.5rem;
+      }
     </style>
   </head>
   <body>
@@ -116,6 +122,8 @@
           div.classList.add("log-parent");
         } else if (type === "child") {
           div.classList.add("log-child");
+        } else if (type === "conference") {
+          div.classList.add("log-conference");
         }
 
         logEl.appendChild(div);
@@ -300,10 +308,29 @@
         appendLog(`🔗 Parent Call SID received: ${parentCallSid}`, "parent");
       });
 
+      socket.on("conference_event", (event) => {
+        const {
+          event: evtType,
+          conference_sid,
+          participant_sid,
+          call_sid,
+          status,
+          note,
+        } = event;
+
+        let msg = `[CONFERENCE] Event: ${evtType || status || "unknown"}`;
+        if (conference_sid) msg += ` | Conf SID: ${conference_sid}`;
+        if (participant_sid) msg += ` | Participant SID: ${participant_sid}`;
+        if (call_sid) msg += ` | Call SID: ${call_sid}`;
+        if (note) msg += ` | Note: ${note}`;
+
+        appendLog(msg, "conference");
+      });
+
       function holdCall(childCallSid, parentCallSid, parentTarget) {
-        const payload = { child_call_sid: childCallSid, parent_call_sid: parentCallSid, parent_target: parentTarget };
+        const payload = { child_call_sid: childCallSid, parent_call_sid: parentCallSid, parent_target: parentTarget, parent_name: 'sachinists' };
         console.debug("Sending hold-call payload", payload);
-        fetch("/hold-call", {
+        fetch("/hold-call-via-conference", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
