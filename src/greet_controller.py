@@ -1,6 +1,7 @@
-from flask import Blueprint, Response, current_app, request, url_for
+from flask import Blueprint, current_app, request, url_for
 from twilio.twiml.voice_response import VoiceResponse
 from dotenv import load_dotenv
+from src.utils import xml_response
 
 load_dotenv()
 
@@ -17,7 +18,7 @@ def play_greeting_to_participant(participant_call_sid: str, conference_name: str
 def greeting():
     resp = VoiceResponse()
     resp.say("Thank you for calling Debjyoti's Dialer App! Have a great day.")
-    return Response(str(resp), mimetype='text/xml')
+    return xml_response(resp)
 
 @greet_bp.route('/greet_then_rejoin', methods=['GET', 'POST'])
 def greet_then_rejoin():
@@ -31,4 +32,4 @@ def greet_then_rejoin():
         start_conference_on_enter=True,
         end_conference_on_exit=True,
     )
-    return Response(str(vr), mimetype='text/xml') 
+    return xml_response(vr) 

@@ -1,10 +1,11 @@
-from flask import Blueprint, request, jsonify, Response, url_for, current_app
+from flask import Blueprint, request, jsonify, url_for, current_app
 from twilio.twiml.voice_response import VoiceResponse
 from dotenv import load_dotenv
 import os
 import time
 
 from src.greet_controller import play_greeting_to_participant
+from src.utils import xml_response
 
 load_dotenv()
 
@@ -124,4 +125,4 @@ def unhold_call():
 def hold_music():
     response = VoiceResponse()
     response.play("https://com.twilio.music.classical.s3.amazonaws.com/BusyStrings.mp3", loop=0)
-    return Response(str(response), mimetype='text/xml')
+    return xml_response(response)

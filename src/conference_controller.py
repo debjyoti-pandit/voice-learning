@@ -1,7 +1,8 @@
-from flask import Blueprint, request, Response, url_for
+from flask import Blueprint, request, url_for
 from twilio.twiml.voice_response import VoiceResponse
 from dotenv import load_dotenv
 import os
+from src.utils import xml_response
 
 load_dotenv()
 
@@ -21,7 +22,7 @@ def join_conference():
         start_conference_on_enter=True,
         end_conference_on_exit=True,
     )
-    return Response(str(response), mimetype='text/xml')
+    return xml_response(response)
 
 
 @conference_bp.route('/connect_to_conference', methods=['POST', 'GET'])
@@ -34,11 +35,11 @@ def connect_to_conference():
         start_conference_on_enter=True,
         end_conference_on_exit=True,
     )
-    return Response(str(response), mimetype='text/xml')
+    return xml_response(response)
 
 
 @conference_bp.route('/conference-announcement', methods=['POST', 'GET'])
 def conference_announcement():
     response = VoiceResponse()
     response.say("You are being joined back into the call.", voice='alice', language='en-US')
-    return Response(str(response), mimetype='text/xml') 
+    return xml_response(response) 

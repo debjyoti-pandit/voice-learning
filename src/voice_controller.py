@@ -1,7 +1,8 @@
-from flask import Blueprint, request, Response, url_for, current_app
+from flask import Blueprint, request, url_for, current_app
 from twilio.twiml.voice_response import VoiceResponse
 from dotenv import load_dotenv
 import os
+from src.utils import xml_response
 
 load_dotenv()
 
@@ -32,7 +33,7 @@ def voice():
     else:
         response.say("Thanks for calling!")
 
-    return Response(str(response), mimetype='text/xml')
+    return xml_response(response)
 
 
 @voice_bp.route('/hangup', methods=['GET', 'POST'])
@@ -40,7 +41,7 @@ def hangup_call():
     """Terminate the current call leg."""
     resp = VoiceResponse()
     resp.hangup()
-    return Response(str(resp), mimetype='text/xml')
+    return xml_response(resp)
 
 
 @voice_bp.route('/answer', methods=['GET', 'POST'])
@@ -48,4 +49,4 @@ def answer_call():
     """Play a simple thank-you message to the caller."""
     resp = VoiceResponse()
     resp.say("Thank you for calling! Have a great day.")
-    return Response(str(resp), mimetype='text/xml') 
+    return xml_response(resp) 
