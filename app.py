@@ -31,6 +31,12 @@ twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 app.config['socketio'] = socketio
 app.config['twilio_client'] = twilio_client
 
+# ---------------------------------------------------------------------------
+# Shared in-memory call log ---------------------------------------------------
+# ---------------------------------------------------------------------------
+call_log: dict[str, dict] = {}
+app.config['call_log'] = call_log
+
 # Register application routes
 app.register_blueprint(templates_bp)
 app.register_blueprint(auth_bp)

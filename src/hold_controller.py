@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 import os
 import time
 
+from src.greet_controller import play_greeting_to_participant
+
 load_dotenv()
 
 hold_bp = Blueprint('hold', __name__)
@@ -18,6 +20,7 @@ def hold_call():
     current_app.logger.info("📥 /hold-call payload: %s", data)
 
     client = current_app.config['twilio_client']
+    call_log = current_app.config['call_log']
     child_call_sid = data.get('child_call_sid')
     parent_call_sid = data.get('parent_call_sid')
     parent_target = data.get('parent_target')  # could be client:alice or phone number
@@ -70,6 +73,7 @@ def unhold_call():
     """Dial the parent back into the conference they were originally on and play an unhold greeting."""
     data = request.json
     client = current_app.config['twilio_client']
+    call_log = current_app.config['call_log']
     parent_call_sid = data.get('parent_call_sid')
     conference_friendly_name = f"CallRoom_{parent_call_sid}"
 
@@ -121,38 +125,3 @@ def hold_music():
     response = VoiceResponse()
     response.play("https://com.twilio.music.classical.s3.amazonaws.com/BusyStrings.mp3", loop=0)
     return Response(str(response), mimetype='text/xml')
-
-
-@hold_bp.route('/join_conference', methods=['POST', 'GET'])
-def join_conference():
-    conference_name = request.args.get('conference_name', 'DefaultRoom')
-    response = VoiceResponse()
-    response.say("Your call is on hold. We will get back to you shortly.", voice='alice')
-    dial = response.dial()
-    dial.conference(
-        conference_name,
-        wait_url=url_for('.hold_music', _external=True),
-        start_conference_on_enter=True,
-        end_conference_on_exit=True,
-    )
-    return Response(str(response), mimetype='text/xml')
-
-
-@hold_bp.route('/connect_to_conference', methods=['POST', 'GET'])
-def connect_to_conference():
-    conference_name = request.args.get('conference_name', 'DefaultRoom')
-    response = VoiceResponse()
-    dial = response.dial()
-    dial.conference(
-        conference_name,
-        start_conference_on_enter=True,
-        end_conference_on_exit=True,
-    )
-    return Response(str(response), mimetype='text/xml')
-
-
-@hold_bp.route('/conference-announcement', methods=['POST', 'GET'])
-def conference_announcement():
-    response = VoiceResponse()
-    response.say("You are being joined back into the call.", voice='alice', language='en-US')
-    return Response(str(response), mimetype='text/xml') 

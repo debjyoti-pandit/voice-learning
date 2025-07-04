@@ -147,14 +147,4 @@ class CallEventsHandler:
             }
             self.socketio.emit("call_event", ring_data)
             entry['ring_duration_emitted'] = True
-            print(f"⏱️ RING DURATION EVENT:", ring_data)
-
-
-# ---------------------------------------------------------------------------
-# Backwards-compatibility thin wrapper
-# ---------------------------------------------------------------------------
-
-
-def handle_call_events(flask_request, socketio: SocketIO, call_log: dict):
-    """Wrapper so existing imports continue to work after refactor."""
-    return CallEventsHandler(socketio, call_log).handle(flask_request) 
+            print("⏱️ RING DURATION EVENT:", ring_data)
