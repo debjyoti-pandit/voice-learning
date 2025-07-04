@@ -40,6 +40,10 @@
         background: #ffc107;
         color: #000;
       }
+      #hold-conf-button {
+        background: #20c997; /* Teal */
+        color: #fff;
+      }
       #unhold-button {
         background: #198754;
         color: #fff;
@@ -90,6 +94,7 @@
     <button id="call-button">Call</button>
     <button id="hangup-button" disabled>Hang Up</button>
     <button id="hold-button" disabled>Hold</button>
+    <button id="hold-conf-button" disabled>Hold Conf</button>
     <button id="unhold-button" disabled>Unhold</button>
 
     <div id="log"></div>
@@ -102,6 +107,7 @@
       const callButton = document.getElementById("call-button");
       const hangupButton = document.getElementById("hangup-button");
       const holdButton = document.getElementById("hold-button");
+      const holdConfButton = document.getElementById("hold-conf-button");
       const unholdButton = document.getElementById("unhold-button");
       const phoneInput = document.getElementById("phoneNumber");
 
@@ -151,6 +157,7 @@
             hangupButton.disabled = false;
             callButton.disabled = true;
             holdButton.disabled = true;
+            holdConfButton.disabled = true;
             unholdButton.disabled = true;
 
             // Capture Parent Call SID once the media session is established
@@ -171,6 +178,7 @@
               hangupButton.disabled = true;
               callButton.disabled = false;
               holdButton.disabled = true;
+              holdConfButton.disabled = true;
               unholdButton.disabled = true;
             }
           });
@@ -212,6 +220,7 @@
       hangupButton.addEventListener("click", () => {
         if (connection) {
           appendLog("🔴 Hanging up...");
+          onHold = false; // reset hold state so disconnect handler restores UI
           connection.disconnect();
         }
       });
@@ -226,6 +235,18 @@
         callButton.disabled = true;
         const target = `client:${myIdentity}`;
         holdCall(childCallSid, parentCallSid, target);
+      });
+
+      holdConfButton.addEventListener("click", () => {
+        if (!childCallSid || !parentCallSid) {
+          appendLog("⚠️ Child or Parent Call SID not yet available.");
+          return;
+        }
+        appendLog("⏸️ Placing calls into conference hold...");
+        onHold = true;
+        callButton.disabled = true;
+        const target = `client:${myIdentity}`;
+        holdCallViaConference(childCallSid, parentCallSid, target);
       });
 
       unholdButton.addEventListener("click", () => {
@@ -275,6 +296,7 @@
           (status === "in-progress" || status === "answered")
         ) {
           if (!onHold) holdButton.disabled = false;
+          if (!onHold) holdConfButton.disabled = false;
           unholdButton.disabled = true;
         }
 
@@ -284,6 +306,7 @@
           (status === "in-progress" || status === "answered")
         ) {
           holdButton.disabled = true;
+          holdConfButton.disabled = true;
           unholdButton.disabled = true;
         }
 
@@ -330,7 +353,7 @@
       function holdCall(childCallSid, parentCallSid, parentTarget) {
         const payload = { child_call_sid: childCallSid, parent_call_sid: parentCallSid, parent_target: parentTarget, parent_name: 'sachinists' };
         console.debug("Sending hold-call payload", payload);
-        fetch("/hold-call-via-conference", {
+        fetch("/hold-call", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -340,11 +363,34 @@
             appendLog(`ℹ️ Hold response: ${JSON.stringify(data)}`);
             onHold = true;
             holdButton.disabled = true;
+            holdConfButton.disabled = true;
             unholdButton.disabled = false;
             hangupButton.disabled = true;
           })
           .catch((err) => {
             appendLog(`❌ Hold request error: ${err.message}`);
+          });
+      }
+
+      function holdCallViaConference(childCallSid, parentCallSid, parentTarget) {
+        const payload = { child_call_sid: childCallSid, parent_call_sid: parentCallSid, parent_target: parentTarget, parent_name: 'sachinists' };
+        console.debug("Sending hold-call-via-conference payload", payload);
+        fetch("/hold-call-via-conference", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            appendLog(`ℹ️ Hold via conference response: ${JSON.stringify(data)}`);
+            onHold = true;
+            holdConfButton.disabled = true;
+            holdButton.disabled = true;
+            unholdButton.disabled = true; // No unhold for conf hold
+            hangupButton.disabled = false; // Allow disconnect
+          })
+          .catch((err) => {
+            appendLog(`❌ Hold via conference request error: ${err.message}`);
           });
       }
 

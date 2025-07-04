@@ -3,6 +3,7 @@ from twilio.twiml.voice_response import VoiceResponse
 from dotenv import load_dotenv
 import os
 from src.utils import xml_response
+from src.conference_events_handler import ConferenceEventsHandler
 
 load_dotenv()
 
@@ -29,11 +30,10 @@ def join_conference():
 
 @conference_bp.route('/conference-events', methods=['POST', 'GET'])
 def conference_events():
-    current_app.logger.info("📥 /conference-events request.values: %s", dict(request.values))
-    print("--------------------------------")
-    print(request.values)
-    print("--------------------------------")
-    return jsonify({'message': 'Conference events received'}), 200
+    """Webhook endpoint for Twilio conference status callbacks."""
+    socketio = current_app.config['socketio']
+    # Delegate processing to handler (mirrors pattern used for call events)
+    return ConferenceEventsHandler(socketio).handle(request)
 
 
 @conference_bp.route('/connect_to_conference', methods=['POST', 'GET'])
