@@ -7,6 +7,7 @@ from src.greet_controller import greet_bp
 from src.voice_controller import voice_bp                
 from src.call_events_controller import events_bp                      
 from src.conference_controller import conference_bp                     
+from src.hold_controller import hold_bp
 import os
 from twilio.rest import Client
 
@@ -44,6 +45,7 @@ app.register_blueprint(greet_bp)
 app.register_blueprint(voice_bp)
 app.register_blueprint(events_bp)
 app.register_blueprint(conference_bp)
+app.register_blueprint(hold_bp)
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5678, debug=True)

@@ -17,7 +17,10 @@ CALLER_ID = os.getenv('CALLER_ID')
 @hold_bp.route('/hold-call', methods=['POST'])
 def hold_call():
     """Move CHILD leg into a hold‐music conference and hang up the PARENT leg."""
-    data = request.json
+    # Attempt to parse JSON payload; return a clear error if the body is empty or not valid JSON.
+    data = request.get_json(silent=True)
+    if data is None:
+        return jsonify({'error': 'Invalid or missing JSON payload'}), 400
     current_app.logger.info("📥 /hold-call payload: %s", data)
 
     client = current_app.config['twilio_client']
@@ -34,7 +37,7 @@ def hold_call():
     try:
                                                                                   
         client.calls(child_call_sid).update(
-            url=url_for('.join_conference', _external=True, conference_name=conference_name),
+            url=url_for('conference.join_conference', _external=True, conference_name=conference_name),
             method='POST',
         )
 
@@ -112,7 +115,7 @@ def unhold_call():
                           
     try:
         client.calls.create(
-            url=url_for('.connect_to_conference', _external=True, conference_name=conference_friendly_name),
+            url=url_for('conference.connect_to_conference', _external=True, conference_name=conference_friendly_name),
             to=parent_number,
             from_=CALLER_ID,
         )

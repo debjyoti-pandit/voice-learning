@@ -18,7 +18,7 @@ def join_conference():
     dial = response.dial()
     dial.conference(
         conference_name,
-        wait_url=url_for('.hold_music', _external=True),
+        wait_url=url_for('hold.hold_music', _external=True),
         start_conference_on_enter=True,
         end_conference_on_exit=True,
     )
