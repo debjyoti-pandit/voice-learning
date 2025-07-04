@@ -67,7 +67,6 @@ class CallEventsHandler:
             if not self.call_log.get(parent_sid, {}).get('parent_sid_emitted'):
                 self.socketio.emit("parent_call_sid", {"parent_sid": parent_sid})
                 self.call_log.setdefault(parent_sid, {})['parent_sid_emitted'] = True
-                print(self.call_log)
 
             if not self.call_log.get(sid, {}).get('child_sid_emitted'):
                 self.socketio.emit("child_call_sid", {"child_sid": sid, "parent_sid": parent_sid})
@@ -127,7 +126,6 @@ class CallEventsHandler:
             )
 
         self.socketio.emit("call_event", event_data)
-        print(f"📞 {call_type.upper()} CALL EVENT:", event_data)
 
     def _maybe_emit_ring_duration(self, log_key, call_type, sid, parent_sid, timestamp):
         entry = self.call_log[log_key]
@@ -147,4 +145,3 @@ class CallEventsHandler:
             }
             self.socketio.emit("call_event", ring_data)
             entry['ring_duration_emitted'] = True
-            print("⏱️ RING DURATION EVENT:", ring_data)

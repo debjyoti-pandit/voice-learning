@@ -38,6 +38,9 @@ app.config['twilio_client'] = twilio_client
 call_log: dict[str, dict] = {}
 app.config['call_log'] = call_log
 
+redis: dict[str, dict] = {}
+app.config['redis'] = redis
+
                              
 app.register_blueprint(templates_bp)
 app.register_blueprint(auth_bp)
@@ -48,4 +51,4 @@ app.register_blueprint(conference_bp)
 app.register_blueprint(hold_bp)
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5678, debug=True)
+    socketio.run(app, host='0.0.0.0', port=5678, debug=False)

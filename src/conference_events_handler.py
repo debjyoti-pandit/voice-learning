@@ -1,4 +1,4 @@
-from flask import current_app
+from flask import current_app, url_for
 from flask_socketio import SocketIO
 
 
@@ -8,12 +8,14 @@ class ConferenceEventsHandler:
     def __init__(self, socketio: SocketIO):
         self.socketio = socketio
 
+
     def handle(self, flask_request):
         """Process the incoming Flask request and emit a structured Socket.IO event."""
         values = flask_request.values
 
-        event_type = values.get("StatusCallbackEvent")  # e.g. "participant-join", "conference-end"
+        event_type = values.get("StatusCallbackEvent")
         conference_sid = values.get("ConferenceSid")
+        call_sid = values.get("CallSid")  # e.g. "participant-join", "conference-end"
         friendly_name = values.get("FriendlyName")
         sequence_number = values.get("SequenceNumber")
         timestamp = values.get("Timestamp")
@@ -23,6 +25,24 @@ class ConferenceEventsHandler:
         start_conference_on_enter = values.get("StartConferenceOnEnter")
         hold = values.get("Hold")
         muted = values.get("Muted")
+        redis = current_app.config['redis']
+        redis[friendly_name]["conference_sid"] = conference_sid
+        try:
+            if event_type == "participant-join":
+                hold_on_conference_join = redis[friendly_name]["calls"][call_sid]['hold_on_conference_join'];
+                if hold_on_conference_join:
+                    print(f"Holding on conference join for call label: {redis[friendly_name]['calls'][call_sid]['call_tag']}")
+                    client = current_app.config['twilio_client']
+                    client.conferences(conference_sid).participants(call_sid).update(
+                        hold=True,
+                        hold_url=url_for('hold.hold_music', _external=True),
+                        hold_method='POST'
+                    )
+        except KeyError:
+            print(f"Event type: {event_type}, Call sid: {call_sid}, Friendly name: {friendly_name}")
+            print(redis)
+            # current_app.logger.error(f"Conference {friendly_name} not found in Redis")
+            return "", 204
 
 
 

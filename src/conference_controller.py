@@ -18,15 +18,16 @@ def join_conference():
     dial = response.dial()
     dial.conference(
         conference_name,
-        wait_url='http://twimlets.com/holdmusic?Bucket=com.twilio.music.silent',
-        start_conference_on_enter=True,
-        end_conference_on_exit=True,
+        wait_url=url_for('hold.hold_music', _external=True),
+        start_conference_on_enter=request.args.get('start_conference_on_enter', True),
+        end_conference_on_exit=request.args.get('end_conference_on_exit', True),
         status_callback=url_for('conference.conference_events', _external=True),
         status_callback_method='POST',
         status_callback_event='start end join leave hold mute',
+        muted=request.args.get('mute', False),
         participant_label=request.args.get('participant_label', 'DefaultParticipant')
-    )
 
+    )
     return xml_response(response)
 
 @conference_bp.route('/conference-events', methods=['POST', 'GET'])

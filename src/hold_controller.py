@@ -13,7 +13,6 @@ hold_bp = Blueprint('hold', __name__)
 
 CALLER_ID = os.getenv('CALLER_ID')
 
-
 @hold_bp.route('/hold-call', methods=['POST'])
 def hold_call():
     """Move CHILD leg into a hold‐music conference and hang up the PARENT leg."""
@@ -35,7 +34,18 @@ def hold_call():
     conference_name = f"CallRoom_{parent_call_sid}"
 
     try:
-                                                                                  
+        # Check child call status before updating
+        child_call = client.calls(child_call_sid).fetch()
+        if child_call.status != "in-progress":
+            current_app.logger.error(f"Child call {child_call_sid} is not in-progress (status: {child_call.status})")
+            return jsonify({'error': f'Child call {child_call_sid} is not in-progress (status: {child_call.status})'}), 400
+
+        # Check parent call status before updating
+        parent_call = client.calls(parent_call_sid).fetch()
+        if parent_call.status != "in-progress":
+            current_app.logger.error(f"Parent call {parent_call_sid} is not in-progress (status: {parent_call.status})")
+            return jsonify({'error': f'Parent call {parent_call_sid} is not in-progress (status: {parent_call.status})'}), 400
+
         client.calls(child_call_sid).update(
             url=url_for('conference.join_conference', _external=True, conference_name=conference_name),
             method='POST',
@@ -115,51 +125,37 @@ def hold_call_via_conference():
     client = current_app.config['twilio_client']
     child_call_sid = data.get('child_call_sid')
     parent_call_sid = data.get('parent_call_sid')
-    parent_name = data.get('parent_name')                                       
+    parent_name = data.get('parent_name')
+    child_name = data.get('child_name')                                      
 
     if not child_call_sid or not parent_call_sid:
         return jsonify({'error': 'Missing call SID(s)'}), 400
+    if not parent_name or not child_name:
+        return jsonify({'error': 'Missing name(s)'}), 400
 
-    conference_name = f"debjyoti's-conference-with-{parent_name}"
-    try:                                                         
+    conference_name = f"{parent_name}'s-conference-with-{child_name}"
+    try:
+        redis = current_app.config['redis']
+        redis[conference_name] = {
+           "calls": {
+               parent_call_sid: {
+                   "call_tag": parent_name,
+                   "hold_on_conference_join": False,
+               },
+               child_call_sid: {
+                   "call_tag": child_name,
+                   "hold_on_conference_join": True,
+               }
+           }
+        }
         client.calls(child_call_sid).update(
-            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label='debjyoti'),
+            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=child_name, start_conference_on_enter=False, end_conference_on_exit=True),
             method='POST',
         )
         client.calls(parent_call_sid).update(
-            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=parent_name),
+            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=parent_name, start_conference_on_enter=True, end_conference_on_exit=False, mute=True),
             method='POST',
         )
-
-        conf_sid = None
-        for _ in range(5):
-            try:
-                conferences = client.conferences.list(
-                    friendly_name=conference_name,
-                    status='in-progress',
-                    limit=1,
-                )
-                if conferences:
-                    conf_sid = conferences[0].sid
-                    break
-            except Exception as e:
-                current_app.logger.warning("Error while searching for conference: %s. Retrying…", e)
-            time.sleep(1)
-
-        # If we located the conference, put the CHILD leg on hold so they hear hold music
-        if conf_sid:
-            try:
-                participants = client.conferences(conf_sid).participants.list(limit=50)
-                for participant in participants:
-                    if participant.call_sid == child_call_sid:
-                        client.conferences(conf_sid).participants(participant.call_sid).update(
-                            hold=True,
-                            hold_url=url_for('hold.hold_music', _external=True),
-                            hold_method='POST',
-                        )
-                        break
-            except Exception as e:
-                current_app.logger.warning("Could not place child on hold: %s", e)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -219,8 +215,9 @@ def unhold_call():
         return jsonify({'error': f'Failed to redial parent: {e}'}), 500
 
 
-@hold_bp.route('/hold-music', methods=['GET', 'POST'])
+@hold_bp.route('/hold_music', methods=['GET', 'POST'])
 def hold_music():
     response = VoiceResponse()
+    # response.play('http://twimlets.com/holdmusic?Bucket=com.twilio.music.classical')
     response.play("https://com.twilio.music.classical.s3.amazonaws.com/BusyStrings.mp3", loop=0)
     return xml_response(response)

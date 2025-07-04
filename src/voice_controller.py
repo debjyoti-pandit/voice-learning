@@ -28,7 +28,6 @@ def voice():
             status_callback=url_for('events.call_events', _external=True),
             status_callback_method='GET',
             status_callback_event='initiated ringing answered completed',
-            url=url_for('greet.greeting', _external=True),
         )
     else:
         response.say("Thanks for calling!")

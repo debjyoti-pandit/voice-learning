@@ -84,12 +84,40 @@
   <body>
     <h1>Twilio Browser Dialer</h1>
 
-    <input
-      id="phoneNumber"
-      type="tel"
-      placeholder="+14155551234"
-      value="+13614705746"
-    />
+    <div style="max-width: 100%; margin: 0 auto; position: relative">
+      <input
+        id="phoneNumber"
+        type="tel"
+        placeholder="+14155551234"
+        value="+13614705746"
+        autocomplete="off"
+        style="width: 100%; box-sizing: border-box"
+      />
+      <ul
+        id="customDropdown"
+        style="
+          display: none;
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: 100%;
+          z-index: 1000;
+          background: #fff;
+          border: 1px solid #ccc;
+          border-top: none;
+          list-style: none;
+          margin: 0;
+          padding: 0;
+          max-height: 150px;
+          overflow-y: auto;
+          width: 100%;
+          box-sizing: border-box;
+          text-align: left;
+          font-family: 'Comic Sans MS', 'Comic Sans', cursive;
+          font-size: 1.05rem;
+        "
+      ></ul>
+    </div>
 
     <button id="call-button">Call</button>
     <button id="hangup-button" disabled>Hang Up</button>
@@ -164,7 +192,10 @@
             conn.on("accept", () => {
               if (conn.parameters && conn.parameters.CallSid) {
                 parentCallSid = conn.parameters.CallSid;
-                appendLog(`📌 Parent Call SID captured (accept): ${parentCallSid}`, "parent");
+                appendLog(
+                  `📌 Parent Call SID captured (accept): ${parentCallSid}`,
+                  "parent"
+                );
               }
             });
           });
@@ -203,7 +234,17 @@
           return;
         }
 
-        appendLog(`📲 Calling ${phoneNumber}...`);
+        // Find name for the number
+        let displayName = null;
+        for (const entry of phoneNumbers) {
+          if (entry.number === phoneNumber) {
+            displayName = entry.name;
+            break;
+          }
+        }
+        const namePart = displayName ? ` (${displayName})` : "";
+
+        appendLog(`📲 Calling ${phoneNumber}${namePart}...`);
         connection = device.connect({ To: phoneNumber });
 
         // Attach listener before any events might fire to capture CallSid reliably
@@ -211,7 +252,10 @@
           connection.on("accept", () => {
             if (connection.parameters && connection.parameters.CallSid) {
               parentCallSid = connection.parameters.CallSid;
-              appendLog(`📌 Parent Call SID captured (accept): ${parentCallSid}`, "parent");
+              appendLog(
+                `📌 Parent Call SID captured (accept): ${parentCallSid}`,
+                "parent"
+              );
             }
           });
         }
@@ -349,14 +393,18 @@
           sequence_number,
         } = event;
 
-        let msg = `(${sequence_number}) [${participant_label ?? "CONFERENCE"}] Event: ${evtType || status || "unknown"}`;
+        let msg = `(${sequence_number}) [${
+          participant_label ?? "CONFERENCE"
+        }] Event: ${evtType || status || "unknown"}`;
         if (conference_sid) msg += ` | Conf SID: ${conference_sid}`;
         if (participant_sid) msg += ` | Participant SID: ${participant_sid}`;
         if (call_sid) msg += ` | Call SID: ${call_sid}`;
         if (note) msg += ` | Note: ${note}`;
         if (coaching) msg += ` | Coaching: ${coaching}`;
-        if (end_conference_on_exit) msg += ` | End Conference On Exit: ${end_conference_on_exit}`;
-        if (start_conference_on_enter) msg += ` | Start Conference On Enter: ${start_conference_on_enter}`;
+        if (end_conference_on_exit)
+          msg += ` | End Conference On Exit: ${end_conference_on_exit}`;
+        if (start_conference_on_enter)
+          msg += ` | Start Conference On Enter: ${start_conference_on_enter}`;
         if (hold) msg += ` | Hold: ${hold}`;
         if (muted) msg += ` | Muted: ${muted}`;
         if (reason) msg += ` | Reason: ${reason}`;
@@ -365,7 +413,12 @@
       });
 
       function holdCall(childCallSid, parentCallSid, parentTarget) {
-        const payload = { child_call_sid: childCallSid, parent_call_sid: parentCallSid, parent_target: parentTarget, parent_name: 'sachinists' };
+        const payload = {
+          child_call_sid: childCallSid,
+          parent_call_sid: parentCallSid,
+          parent_target: parentTarget,
+          parent_name: "sachinists",
+        };
         console.debug("Sending hold-call payload", payload);
         fetch("/hold-call", {
           method: "POST",
@@ -386,8 +439,18 @@
           });
       }
 
-      function holdCallViaConference(childCallSid, parentCallSid, parentTarget) {
-        const payload = { child_call_sid: childCallSid, parent_call_sid: parentCallSid, parent_target: parentTarget, parent_name: 'sachinists' };
+      function holdCallViaConference(
+        childCallSid,
+        parentCallSid,
+        parentTarget
+      ) {
+        const payload = {
+          child_call_sid: childCallSid,
+          parent_call_sid: parentCallSid,
+          parent_target: parentTarget,
+          child_name: "sachinists",
+          parent_name: "debjyoti",
+        };
         console.debug("Sending hold-call-via-conference payload", payload);
         fetch("/hold-call-via-conference", {
           method: "POST",
@@ -396,7 +459,9 @@
         })
           .then((res) => res.json())
           .then((data) => {
-            appendLog(`ℹ️ Hold via conference response: ${JSON.stringify(data)}`);
+            appendLog(
+              `ℹ️ Hold via conference response: ${JSON.stringify(data)}`
+            );
             onHold = true;
             holdConfButton.disabled = true;
             holdButton.disabled = true;
@@ -426,6 +491,59 @@
             appendLog(`❌ Unhold request error: ${err.message}`);
           });
       }
+
+      // Custom dropdown logic (no Bootstrap)
+      const customDropdown = document.getElementById("customDropdown");
+      const phoneNumbers = [
+        {
+          name: "Second In JustCall",
+          number: "+13614705746",
+        },
+        {
+          name: "Third In JustCall",
+          number: "+19037760728",
+        },
+        {
+          name: "Personal Jio",
+          number: "+918617020252",
+        },
+      ];
+
+      // "+13614705746", "+19037760728", "+918617020252"
+      function renderDropdown() {
+        customDropdown.innerHTML = "";
+        phoneNumbers.forEach((entry) => {
+          const li = document.createElement("li");
+          li.textContent = `${entry.name}: ${entry.number}`;
+          li.style.padding = "0.5rem 1rem";
+          li.style.cursor = "pointer";
+          li.style.textAlign = "left";
+          li.style.fontFamily = "'Comic Sans MS', 'Comic Sans', cursive";
+          li.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            phoneInput.value = entry.number;
+            customDropdown.style.display = "none";
+          });
+          li.addEventListener("mouseover", () => {
+            li.style.background = "#f0f0f0";
+          });
+          li.addEventListener("mouseout", () => {
+            li.style.background = "#fff";
+          });
+          customDropdown.appendChild(li);
+        });
+        customDropdown.style.display = "block";
+      }
+
+      phoneInput.addEventListener("focus", () => {
+        renderDropdown();
+      });
+      phoneInput.addEventListener("input", () => {
+        renderDropdown();
+      });
+      phoneInput.addEventListener("blur", () => {
+        setTimeout(() => (customDropdown.style.display = "none"), 200);
+      });
 
       initDialer();
     </script>
