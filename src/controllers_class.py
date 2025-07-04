@@ -78,13 +78,13 @@ class VoiceController(MethodView):
         if to_number:
             dial = response.dial(
                 caller_id=CALLER_ID,
-                action=url_for('api.hangup', _external=True),
+                action=url_for('voice.hangup_call', _external=True),
                 method='POST',
                 timeout=20,
             )
             dial.number(
                 to_number,
-                status_callback=url_for('api.call_events', _external=True),
+                status_callback=url_for('events.call_events', _external=True),
                 status_callback_method='GET',
                 status_callback_event='initiated ringing answered completed',
                 url=url_for('api.greeting', _external=True),
@@ -148,7 +148,7 @@ class JoinConferenceController(MethodView):
         dial = response.dial()
         dial.conference(
             conference_name,
-            wait_url=url_for('api.hold_music', _external=True),
+            wait_url=url_for('conference.hold_music', _external=True),
             start_conference_on_enter=True,
             end_conference_on_exit=True,
         )
@@ -267,12 +267,12 @@ def register_controllers():
     api_bp.add_url_rule('/greeting', view_func=GreetingController.as_view('greeting'))
     api_bp.add_url_rule('/voice', view_func=VoiceController.as_view('voice'))
     api_bp.add_url_rule('/call-events', view_func=CallEventsController.as_view('call_events'))
-    api_bp.add_url_rule('/hold-call', view_func=HoldCallController.as_view('hold_call'))
-    api_bp.add_url_rule('/join_conference', view_func=JoinConferenceController.as_view('join_conference'))
-    api_bp.add_url_rule('/unhold-call', view_func=UnholdCallController.as_view('unhold_call'))
-    api_bp.add_url_rule('/hold-music', view_func=HoldMusicController.as_view('hold_music'))
-    api_bp.add_url_rule('/connect_to_conference', view_func=ConnectToConferenceController.as_view('connect_to_conference'))
-    api_bp.add_url_rule('/conference-announcement', view_func=ConferenceAnnouncementController.as_view('conference_announcement'))
+    # api_bp.add_url_rule('/hold-call', view_func=HoldCallController.as_view('hold_call'))
+    # api_bp.add_url_rule('/join_conference', view_func=JoinConferenceController.as_view('join_conference'))
+    # api_bp.add_url_rule('/unhold-call', view_func=UnholdCallController.as_view('unhold_call'))
+    # api_bp.add_url_rule('/hold-music', view_func=HoldMusicController.as_view('hold_music'))
+    # api_bp.add_url_rule('/connect_to_conference', view_func=ConnectToConferenceController.as_view('connect_to_conference'))
+    # api_bp.add_url_rule('/conference-announcement', view_func=ConferenceAnnouncementController.as_view('conference_announcement'))
     api_bp.add_url_rule('/hangup', view_func=HangupController.as_view('hangup'))
     api_bp.add_url_rule('/answer', view_func=AnswerController.as_view('answer'))
     api_bp.add_url_rule('/greet_then_rejoin', view_func=GreetThenRejoinController.as_view('greet_then_rejoin'))
