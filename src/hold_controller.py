@@ -132,6 +132,8 @@ def hold_call_via_conference():
     parent_call_sid = data.get('parent_call_sid')
     parent_name = data.get('parent_name')
     child_name = data.get('child_name')                                      
+    parent_role = data.get('parent_role', 'agent')
+    child_role = data.get('child_role', 'customer')
 
     if not child_call_sid or not parent_call_sid:
         return jsonify({'error': 'Missing call SID(s)'}), 400
@@ -165,23 +167,42 @@ def hold_call_via_conference():
                    "call_tag": parent_name,
                    "hold_on_conference_join": False,
                    "initial_call_recording_sid": get_value(recordings, parent_call_sid),
+                   "role": parent_role,
                },
                child_call_sid: {
                    "call_tag": child_name,
                    "hold_on_conference_join": True,
                    "initial_call_recording_sid": get_value(recordings, child_call_sid),
+                   "role": child_role,
                }
-           }
+           },
+           "participants": {}
         }
         print(redis)
         client.calls(child_call_sid).update(
-            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=child_name, start_conference_on_enter=False, end_conference_on_exit=True),
+            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=child_name, start_conference_on_enter=False, end_conference_on_exit=True, role=child_role),
             method='POST',
         )
+        # Set child (customer) on hold in redis immediately
+        redis[conference_name]['participants'][child_call_sid] = {
+            'participant_label': child_name,
+            'call_sid': child_call_sid,
+            'muted': False,
+            'on_hold': True,
+            'role': child_role,
+        }
         client.calls(parent_call_sid).update(
-            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=parent_name, start_conference_on_enter=True, end_conference_on_exit=False, mute=True),
+            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=parent_name, start_conference_on_enter=True, end_conference_on_exit=False, mute=True, role=parent_role),
             method='POST',
         )
+        # Set parent (agent) muted in redis immediately
+        redis[conference_name]['participants'][parent_call_sid] = {
+            'participant_label': parent_name,
+            'call_sid': parent_call_sid,
+            'muted': True,
+            'on_hold': False,
+            'role': parent_role,
+        }
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500

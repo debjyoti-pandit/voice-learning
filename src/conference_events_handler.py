@@ -26,7 +26,38 @@ class ConferenceEventsHandler:
         hold = values.get("Hold")
         muted = values.get("Muted")
         redis = current_app.config['redis']
+        redis.setdefault(friendly_name, {})
         redis[friendly_name]["conference_sid"] = conference_sid
+        redis[friendly_name].setdefault("participants", {})
+        participants = redis[friendly_name]["participants"]
+        calls = redis[friendly_name].get("calls", {})
+        # Get role from calls dict if available, else from request
+        role = None
+        if call_sid in calls:
+            role = calls[call_sid].get("role")
+        if not role:
+            role = values.get("role")
+        # Track participant state
+        if event_type == "participant-join":
+            print(participants)
+            # Merge with existing state if present, but only update muted/on_hold if webhook value is not None
+            prev = participants.get(call_sid, {})
+            participants[call_sid] = {
+                "participant_label": participant_label or prev.get("participant_label"),
+                "call_sid": call_sid,
+                "muted": bool(muted) if muted is not None else prev.get("muted", False),
+                "on_hold": bool(hold) if hold is not None else prev.get("on_hold", False),
+                "role": role or prev.get("role"),
+            }
+        elif event_type in ("mute", "hold"):
+            if call_sid in participants:
+                if event_type == "mute" and muted is not None:
+                    participants[call_sid]["muted"] = bool(muted)
+                if event_type == "hold" and hold is not None:
+                    participants[call_sid]["on_hold"] = bool(hold)
+        elif event_type == "participant-leave":
+            if call_sid in participants:
+                participants[call_sid]["left"] = True
         try:
             if event_type == "participant-join":
                 hold_on_conference_join = redis[friendly_name]["calls"][call_sid]['hold_on_conference_join'];

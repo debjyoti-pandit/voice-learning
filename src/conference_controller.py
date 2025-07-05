@@ -1,4 +1,4 @@
-from flask import Blueprint, current_app, jsonify, request, url_for
+from flask import Blueprint, current_app, jsonify, request, url_for, abort
 from twilio.twiml.voice_response import VoiceResponse
 from dotenv import load_dotenv
 import os
@@ -32,6 +32,7 @@ def join_conference():
     end_conference_on_exit = str2bool(request.args.get('end_conference_on_exit'), True)
     muted = str2bool(request.args.get('mute'), False)
     participant_label = request.args.get('participant_label', 'DefaultParticipant')
+    role = request.args.get('role', None)
 
     response = VoiceResponse()
     dial = response.dial(record='record-from-answer-dual')  # 👈 Enables full recording
@@ -74,4 +75,86 @@ def connect_to_conference():
 def conference_announcement():
     response = VoiceResponse()
     response.say("You are being joined back into the call.", voice='alice', language='en-US')
-    return xml_response(response) 
+    return xml_response(response)
+
+@conference_bp.route('/conference/<conference_name>/participants', methods=['GET'])
+def get_conference_participants(conference_name):
+    redis = current_app.config['redis']
+    participants = redis.get(conference_name, {}).get('participants', {})
+    result = []
+    for sid, info in participants.items():
+        # Show all participants, including 'ai' and 'customer' roles
+        result.append({
+            'participant_label': info.get('participant_label'),
+            'muted': info.get('muted'),
+            'on_hold': info.get('on_hold'),
+            'call_sid': info.get('call_sid'),
+            'role': info.get('role'),
+        })
+    return jsonify(result)
+
+@conference_bp.route('/conference/mute', methods=['POST'])
+def mute_participant():
+    data = request.get_json()
+    conference_name = data.get('conference_name')
+    call_sid = data.get('call_sid')
+    mute = data.get('mute', True)
+    redis = current_app.config['redis']
+    client = current_app.config['twilio_client']
+    conf_sid = redis.get(conference_name, {}).get('conference_sid')
+    if not conf_sid or not call_sid:
+        return abort(400, 'Missing conference_sid or call_sid')
+    try:
+        client.conferences(conf_sid).participants(call_sid).update(muted=bool(mute))
+        # Update redis state
+        p = redis[conference_name]['participants'].get(call_sid)
+        if p:
+            p['muted'] = bool(mute)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@conference_bp.route('/conference/hold', methods=['POST'])
+def hold_participant():
+    data = request.get_json()
+    conference_name = data.get('conference_name')
+    call_sid = data.get('call_sid')
+    hold = data.get('hold', True)
+    redis = current_app.config['redis']
+    client = current_app.config['twilio_client']
+    conf_sid = redis.get(conference_name, {}).get('conference_sid')
+    if not conf_sid or not call_sid:
+        return abort(400, 'Missing conference_sid or call_sid')
+    try:
+        client.conferences(conf_sid).participants(call_sid).update(hold=bool(hold))
+        # Update redis state
+        p = redis[conference_name]['participants'].get(call_sid)
+        if p:
+            p['on_hold'] = bool(hold)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@conference_bp.route('/conference/kick', methods=['POST'])
+def kick_participant():
+    data = request.get_json()
+    conference_name = data.get('conference_name')
+    call_sid = data.get('call_sid')
+    # Prevent self-kick: if the requester is trying to kick themselves, block it
+    requester_call_sid = request.args.get('call_sid') or data.get('requester_call_sid')
+    if requester_call_sid and call_sid == requester_call_sid:
+        return jsonify({'success': False, 'error': 'You cannot kick yourself.'}), 400
+    redis = current_app.config['redis']
+    client = current_app.config['twilio_client']
+    conf_sid = redis.get(conference_name, {}).get('conference_sid')
+    if not conf_sid or not call_sid:
+        return abort(400, 'Missing conference_sid or call_sid')
+    try:
+        client.conferences(conf_sid).participants(call_sid).delete()
+        # Update redis state
+        p = redis[conference_name]['participants'].get(call_sid)
+        if p:
+            p['left'] = True
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500 

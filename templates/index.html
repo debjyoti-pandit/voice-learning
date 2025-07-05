@@ -125,6 +125,10 @@
     <button id="hold-conf-button" disabled>Hold Conf</button>
     <button id="unhold-button" disabled>Unhold</button>
 
+    <div id="participants-section" style="margin-top:2rem; display:none;">
+      <h2>Conference Participants</h2>
+      <ul id="participants-list" style="list-style:none; padding:0;"></ul>
+    </div>
     <div id="log"></div>
 
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
@@ -145,6 +149,9 @@
       let parentCallSid = null; // Will be filled alongside the child SID
       let onHold = false; // Track hold state
       let myIdentity = null; // client identity
+      let currentConferenceName = null;
+      let myCallSid = null;
+      let participantsInterval = null;
 
       const appendLog = (msg, type = null) => {
         const time = new Date().toLocaleTimeString();
@@ -267,6 +274,8 @@
           onHold = false; // reset hold state so disconnect handler restores UI
           connection.disconnect();
         }
+        showParticipantsSection(false);
+        stopParticipantsPolling();
       });
 
       holdButton.addEventListener("click", () => {
@@ -410,6 +419,20 @@
         if (reason) msg += ` | Reason: ${reason}`;
 
         appendLog(msg, "conference");
+
+        // Try to detect when we join a conference and set conference name/call sid
+        if (event.event === 'participant-join') {
+          currentConferenceName = event.conference_name;
+          myCallSid = event.call_sid; // This will be set for the joining participant
+          showParticipantsSection(true);
+          fetchAndRenderParticipants();
+          startParticipantsPolling();
+        }
+        if (event.event === 'participant-leave' && event.call_sid === myCallSid) {
+          // We left the conference
+          showParticipantsSection(false);
+          stopParticipantsPolling();
+        }
       });
 
       function holdCall(childCallSid, parentCallSid, parentTarget) {
@@ -544,6 +567,93 @@
       phoneInput.addEventListener("blur", () => {
         setTimeout(() => (customDropdown.style.display = "none"), 200);
       });
+
+      // --- PARTICIPANT UI LOGIC ---
+      function showParticipantsSection(show) {
+        document.getElementById('participants-section').style.display = show ? '' : 'none';
+      }
+
+      async function fetchAndRenderParticipants() {
+        if (!currentConferenceName || !myCallSid) return;
+        try {
+          const res = await fetch(`/conference/${encodeURIComponent(currentConferenceName)}/participants?call_sid=${myCallSid}`);
+          const participants = await res.json();
+          // Debug: print the full participants array to the log
+          appendLog('[DEBUG] Participants: ' + JSON.stringify(participants));
+          const list = document.getElementById('participants-list');
+          list.innerHTML = '';
+          participants.forEach(p => {
+            const li = document.createElement('li');
+            li.style.marginBottom = '0.5rem';
+            let label = `${p.participant_label} (${p.role}) [On Hold: ${p.on_hold ? 'Yes' : 'No'}${p.on_hold ? '' : `, Muted: ${p.muted ? 'Yes' : 'No'}`}]`;
+            if (p.call_sid === myCallSid) label += ' (You)';
+            li.textContent = label;
+            // Only allow controls for others, never for self
+            if (p.call_sid !== myCallSid) {
+              // Mute/unmute button
+              const muteBtn = document.createElement('button');
+              muteBtn.textContent = p.muted ? 'Unmute' : 'Mute';
+              muteBtn.style.marginLeft = '0.5rem';
+              muteBtn.onclick = async () => {
+                await fetch('/conference/mute', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ conference_name: currentConferenceName, call_sid: p.call_sid, mute: !p.muted })
+                });
+                fetchAndRenderParticipants();
+              };
+              li.appendChild(muteBtn);
+              // Hold/unhold button
+              const holdBtn = document.createElement('button');
+              holdBtn.textContent = p.on_hold ? 'Unhold' : 'Hold';
+              holdBtn.style.marginLeft = '0.5rem';
+              holdBtn.onclick = async () => {
+                await fetch('/conference/hold', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ conference_name: currentConferenceName, call_sid: p.call_sid, hold: !p.on_hold })
+                });
+                fetchAndRenderParticipants();
+              };
+              li.appendChild(holdBtn);
+              // Kick button (never allow self-kick)
+              const kickBtn = document.createElement('button');
+              kickBtn.textContent = 'Kick';
+              kickBtn.style.marginLeft = '0.5rem';
+              kickBtn.onclick = async () => {
+                await fetch('/conference/kick', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ conference_name: currentConferenceName, call_sid: p.call_sid })
+                });
+                fetchAndRenderParticipants();
+              };
+              li.appendChild(kickBtn);
+            } else {
+              // For self, show disabled buttons for UI consistency
+              ['Mute', 'Hold', 'Kick'].forEach(txt => {
+                const btn = document.createElement('button');
+                btn.textContent = txt;
+                btn.disabled = true;
+                btn.style.marginLeft = '0.5rem';
+                li.appendChild(btn);
+              });
+            }
+            list.appendChild(li);
+          });
+        } catch (e) {
+          // Optionally log error
+        }
+      }
+
+      function startParticipantsPolling() {
+        if (participantsInterval) clearInterval(participantsInterval);
+        participantsInterval = setInterval(fetchAndRenderParticipants, 5000);
+      }
+      function stopParticipantsPolling() {
+        if (participantsInterval) clearInterval(participantsInterval);
+        participantsInterval = null;
+      }
 
       initDialer();
     </script>
