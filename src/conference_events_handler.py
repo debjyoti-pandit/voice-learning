@@ -40,11 +40,7 @@ class ConferenceEventsHandler:
                     )
         except KeyError:
             print(f"Event type: {event_type}, Call sid: {call_sid}, Friendly name: {friendly_name}")
-            print(redis)
-            # current_app.logger.error(f"Conference {friendly_name} not found in Redis")
             return "", 204
-
-
 
         # Different callback types use different parameter names to reference the participant / call SIDs
         call_sid = (

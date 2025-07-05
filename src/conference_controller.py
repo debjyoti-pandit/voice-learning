@@ -11,22 +11,41 @@ conference_bp = Blueprint('conference', __name__)
 
 CALLER_ID = os.getenv('CALLER_ID')
 
+def str2bool(val, default=False):
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.lower() in ('true', '1', 'yes')
+    return default
+
+def get_value(obj, key):
+    try:
+        return obj[key]
+    except (KeyError, TypeError):
+        return None
+
+
 @conference_bp.route('/join_conference', methods=['POST', 'GET'])
 def join_conference():
     conference_name = request.args.get('conference_name', 'DefaultRoom')
+    start_conference_on_enter = str2bool(request.args.get('start_conference_on_enter'), True)
+    end_conference_on_exit = str2bool(request.args.get('end_conference_on_exit'), True)
+    muted = str2bool(request.args.get('mute'), False)
+    participant_label = request.args.get('participant_label', 'DefaultParticipant')
+
     response = VoiceResponse()
-    dial = response.dial()
+    dial = response.dial(record='record-from-answer-dual')  # 👈 Enables full recording
     dial.conference(
         conference_name,
         wait_url=url_for('hold.hold_music', _external=True),
-        start_conference_on_enter=request.args.get('start_conference_on_enter', True),
-        end_conference_on_exit=request.args.get('end_conference_on_exit', True),
+        wait_method='POST',
+        start_conference_on_enter=start_conference_on_enter,
+        end_conference_on_exit=end_conference_on_exit,
+        muted=muted,
+        participant_label=participant_label,
         status_callback=url_for('conference.conference_events', _external=True),
         status_callback_method='POST',
-        status_callback_event='start end join leave hold mute',
-        muted=request.args.get('mute', False),
-        participant_label=request.args.get('participant_label', 'DefaultParticipant')
-
+        status_callback_event='start end join leave hold mute'
     )
     return xml_response(response)
 

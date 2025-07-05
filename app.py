@@ -51,4 +51,4 @@ app.register_blueprint(conference_bp)
 app.register_blueprint(hold_bp)
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5678, debug=False)
+    socketio.run(app, host='0.0.0.0', port=5678, debug=True)

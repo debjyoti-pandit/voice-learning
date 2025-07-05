@@ -22,6 +22,7 @@ def voice():
             action=url_for('voice.hangup_call', _external=True),
             method='POST',
             timeout=20,
+            record='record-from-answer-dual'
         )
         dial.number(
             to_number,

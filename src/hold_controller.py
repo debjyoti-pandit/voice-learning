@@ -114,6 +114,11 @@ def hold_call():
 
     return jsonify({'message': 'Child placed on hold; both legs in conference'}), 200
 
+def get_value(obj, key):
+    try:
+        return obj[key]
+    except (KeyError, TypeError):
+        return None
 
 @hold_bp.route('/hold-call-via-conference', methods=['POST'])
 def hold_call_via_conference():
@@ -134,6 +139,24 @@ def hold_call_via_conference():
         return jsonify({'error': 'Missing name(s)'}), 400
 
     conference_name = f"{parent_name}'s-conference-with-{child_name}"
+    print(f"Conference name: {conference_name}")
+
+    recordings = {}
+    try:
+        recording = client.recordings.list(call_sid=parent_call_sid, limit=1)
+        if recording:
+            print(f"Stopping initial recording for parent call: {recording[0].sid}")
+            recordings[parent_call_sid] = recording[0].sid
+            client.recordings(recording[0].sid).update(status='stopped')
+        else:
+            recording = client.recordings.list(call_sid=child_call_sid, limit=1)
+            if recording:
+                print(f"Stopping initial recording for child call: {recording[0].sid}")
+                recordings[child_call_sid] = recording[0].sid
+                client.recordings(recording[0].sid).update(status='stopped')
+    except Exception as e:
+        current_app.logger.warning(f"Could not access recordings to stop initial: {e}")
+
     try:
         redis = current_app.config['redis']
         redis[conference_name] = {
@@ -141,13 +164,16 @@ def hold_call_via_conference():
                parent_call_sid: {
                    "call_tag": parent_name,
                    "hold_on_conference_join": False,
+                   "initial_call_recording_sid": get_value(recordings, parent_call_sid),
                },
                child_call_sid: {
                    "call_tag": child_name,
                    "hold_on_conference_join": True,
+                   "initial_call_recording_sid": get_value(recordings, child_call_sid),
                }
            }
         }
+        print(redis)
         client.calls(child_call_sid).update(
             url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=child_name, start_conference_on_enter=False, end_conference_on_exit=True),
             method='POST',
@@ -156,6 +182,7 @@ def hold_call_via_conference():
             url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=parent_name, start_conference_on_enter=True, end_conference_on_exit=False, mute=True),
             method='POST',
         )
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
