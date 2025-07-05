@@ -16,7 +16,7 @@ CALLER_ID = os.getenv('CALLER_ID')
 @hold_bp.route('/hold-call', methods=['POST'])
 def hold_call():
     """Move CHILD leg into a hold‐music conference and hang up the PARENT leg."""
-    # Attempt to parse JSON payload; return a clear error if the body is empty or not valid JSON.
+                                                                                                 
     data = request.get_json(silent=True)
     if data is None:
         return jsonify({'error': 'Invalid or missing JSON payload'}), 400
@@ -34,13 +34,13 @@ def hold_call():
     conference_name = f"CallRoom_{parent_call_sid}"
 
     try:
-        # Check child call status before updating
+                                                 
         child_call = client.calls(child_call_sid).fetch()
         if child_call.status != "in-progress":
             current_app.logger.error(f"Child call {child_call_sid} is not in-progress (status: {child_call.status})")
             return jsonify({'error': f'Child call {child_call_sid} is not in-progress (status: {child_call.status})'}), 400
 
-        # Check parent call status before updating
+                                                  
         parent_call = client.calls(parent_call_sid).fetch()
         if parent_call.status != "in-progress":
             current_app.logger.error(f"Parent call {parent_call_sid} is not in-progress (status: {parent_call.status})")
@@ -51,13 +51,13 @@ def hold_call():
             method='POST',
         )
 
-        # Redirect the **parent** leg into the same conference (they can speak)
+                                                                               
         client.calls(parent_call_sid).update(
             url=url_for('conference.connect_to_conference', _external=True, conference_name=conference_name),
             method='POST',
         )
 
-        # After both legs have been redirected, wait briefly for the conference to spin up
+                                                                                          
         conf_sid = None
         for _ in range(5):
             try:
@@ -73,7 +73,7 @@ def hold_call():
                 current_app.logger.warning("Error while searching for conference: %s. Retrying…", e)
             time.sleep(1)
 
-        # If we located the conference, put the CHILD leg on hold so they hear hold music
+                                                                                         
         if conf_sid:
             try:
                 participants = client.conferences(conf_sid).participants.list(limit=50)
@@ -183,7 +183,7 @@ def hold_call_via_conference():
             url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=child_name, start_conference_on_enter=False, end_conference_on_exit=True, role=child_role),
             method='POST',
         )
-        # Set child (customer) on hold in redis immediately
+                                                           
         redis[conference_name]['participants'][child_call_sid] = {
             'participant_label': child_name,
             'call_sid': child_call_sid,
@@ -195,7 +195,7 @@ def hold_call_via_conference():
             url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=parent_name, start_conference_on_enter=True, end_conference_on_exit=False, mute=True, role=parent_role),
             method='POST',
         )
-        # Set parent (agent) muted in redis immediately
+                                                       
         redis[conference_name]['participants'][parent_call_sid] = {
             'participant_label': parent_name,
             'call_sid': parent_call_sid,
@@ -266,6 +266,6 @@ def unhold_call():
 @hold_bp.route('/hold_music', methods=['GET', 'POST'])
 def hold_music():
     response = VoiceResponse()
-    # response.play('http://twimlets.com/holdmusic?Bucket=com.twilio.music.classical')
+                                                                                      
     response.play("https://com.twilio.music.classical.s3.amazonaws.com/BusyStrings.mp3", loop=0)
     return xml_response(response)

@@ -15,7 +15,7 @@ class ConferenceEventsHandler:
 
         event_type = values.get("StatusCallbackEvent")
         conference_sid = values.get("ConferenceSid")
-        call_sid = values.get("CallSid")  # e.g. "participant-join", "conference-end"
+        call_sid = values.get("CallSid")                                             
         friendly_name = values.get("FriendlyName")
         sequence_number = values.get("SequenceNumber")
         timestamp = values.get("Timestamp")
@@ -31,16 +31,16 @@ class ConferenceEventsHandler:
         redis[friendly_name].setdefault("participants", {})
         participants = redis[friendly_name]["participants"]
         calls = redis[friendly_name].get("calls", {})
-        # Get role from calls dict if available, else from request
+                                                                  
         role = None
         if call_sid in calls:
             role = calls[call_sid].get("role")
         if not role:
             role = values.get("role")
-        # Track participant state
+                                 
         if event_type == "participant-join":
             print(participants)
-            # Merge with existing state if present, but only update muted/on_hold if webhook value is not None
+                                                                                                              
             prev = participants.get(call_sid, {})
             participants[call_sid] = {
                 "participant_label": participant_label or prev.get("participant_label"),
@@ -73,7 +73,7 @@ class ConferenceEventsHandler:
             print(f"Event type: {event_type}, Call sid: {call_sid}, Friendly name: {friendly_name}")
             return "", 204
 
-        # Different callback types use different parameter names to reference the participant / call SIDs
+                                                                                                         
         call_sid = (
             values.get("CallSid")
             or values.get("CallSidEndingConference")
@@ -97,14 +97,14 @@ class ConferenceEventsHandler:
             "muted": muted,
         }
 
-        # Strip keys whose value is None for a cleaner payload
+                                                              
         event_data = {k: v for k, v in event_data.items() if v is not None}
 
-        # Emit over WebSocket so frontend can consume
+                                                     
         self.socketio.emit("conference_event", event_data)
 
-        # Server-side log for debugging/tracing
+                                               
         current_app.logger.info("📢 Conference event emitted: %s", event_data)
 
-        # Twilio expects a 2xx; 204 avoids extra bytes
+                                                      
         return "", 204 

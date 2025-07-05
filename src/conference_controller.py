@@ -35,7 +35,7 @@ def join_conference():
     role = request.args.get('role', None)
 
     response = VoiceResponse()
-    dial = response.dial(record='record-from-answer-dual')  # 👈 Enables full recording
+    dial = response.dial(record='record-from-answer-dual')                            
     dial.conference(
         conference_name,
         wait_url=url_for('hold.hold_music', _external=True),
@@ -54,7 +54,7 @@ def join_conference():
 def conference_events():
     """Webhook endpoint for Twilio conference status callbacks."""
     socketio = current_app.config['socketio']
-    # Delegate processing to handler (mirrors pattern used for call events)
+                                                                           
     return ConferenceEventsHandler(socketio).handle(request)
 
 
@@ -83,7 +83,7 @@ def get_conference_participants(conference_name):
     participants = redis.get(conference_name, {}).get('participants', {})
     result = []
     for sid, info in participants.items():
-        # Show all participants, including 'ai' and 'customer' roles
+                                                                    
         result.append({
             'participant_label': info.get('participant_label'),
             'muted': info.get('muted'),
@@ -106,7 +106,7 @@ def mute_participant():
         return abort(400, 'Missing conference_sid or call_sid')
     try:
         client.conferences(conf_sid).participants(call_sid).update(muted=bool(mute))
-        # Update redis state
+                            
         p = redis[conference_name]['participants'].get(call_sid)
         if p:
             p['muted'] = bool(mute)
@@ -127,7 +127,7 @@ def hold_participant():
         return abort(400, 'Missing conference_sid or call_sid')
     try:
         client.conferences(conf_sid).participants(call_sid).update(hold=bool(hold))
-        # Update redis state
+                            
         p = redis[conference_name]['participants'].get(call_sid)
         if p:
             p['on_hold'] = bool(hold)
@@ -140,7 +140,7 @@ def kick_participant():
     data = request.get_json()
     conference_name = data.get('conference_name')
     call_sid = data.get('call_sid')
-    # Prevent self-kick: if the requester is trying to kick themselves, block it
+                                                                                
     requester_call_sid = request.args.get('call_sid') or data.get('requester_call_sid')
     if requester_call_sid and call_sid == requester_call_sid:
         return jsonify({'success': False, 'error': 'You cannot kick yourself.'}), 400
@@ -151,7 +151,7 @@ def kick_participant():
         return abort(400, 'Missing conference_sid or call_sid')
     try:
         client.conferences(conf_sid).participants(call_sid).delete()
-        # Update redis state
+                            
         p = redis[conference_name]['participants'].get(call_sid)
         if p:
             p['left'] = True
