@@ -138,7 +138,7 @@ def hold_call_via_conference():
     if not parent_name or not child_name:
         return jsonify({'error': 'Missing name(s)'}), 400
 
-    conference_name = f"{parent_name}'s-conference-with-{child_name}"
+    conference_name = f"{parent_name}-with-{child_name}"
 
     recordings = {}
     try:

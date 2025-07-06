@@ -34,13 +34,15 @@ def warm_transfer():
     child_role = data.get('child_role', 'customer')
     identity = data.get('identity')
     print(f"Identity: {identity}")
+    transfer_to = data.get('transfer_to')
+    print(f"Transfer to: {transfer_to}")    
 
     if not child_call_sid or not parent_call_sid:
         return jsonify({'error': 'Missing call SID(s)'}), 400
     if not parent_name or not child_name:
         return jsonify({'error': 'Missing name(s)'}), 400
 
-    conference_name = f"{parent_name}'s-conference-with-{child_name}"
+    conference_name = f"{parent_name}-with-{child_name}"
 
     recordings = {}
     try:
@@ -104,10 +106,81 @@ def warm_transfer():
             'role': parent_role,
         }
 
+        add_participant_to_conference(conference_name, transfer_to, parent_role, identity)
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
     return jsonify({'message': 'both legs in conference'}), 200
+
+
+def add_participant_to_conference(conference_name, phone_number, role="agent", identity=None):
+    print(f"Adding participant to conference: {conference_name}, {phone_number}, {identity}")
+    client = current_app.config['twilio_client']
+
+    # Determine a label to use for this participant inside the conference. If the
+    # destination is a Twilio Client identity (e.g. "client:alice"), strip the
+    # prefix; otherwise use the raw phone number.
+    participant_label = phone_number[7:] if phone_number.startswith("client:") else phone_number
+
+    to_is_client = phone_number.startswith("client:")
+
+    if to_is_client:
+        # Twilio client identities must be alphanumeric plus underscore and <=100 chars.
+        # Convert the friendly conference name to a safe slug and prepend a fixed
+        # marker so the receiving dialer can recognise it.
+        import re
+
+        slug = re.sub(r"[^A-Za-z0-9_\-]", "-", conference_name)[:80]  # keep short
+        # Use a valid Twilio Client identity as the caller ID (must be prefixed with "client:")
+        caller_id = f"client:conference-{slug}"
+    else:
+        caller_id = current_app.config.get("TWILIO_CALLER_ID") or os.getenv("CALLER_ID")
+
+    call = client.calls.create(
+        to=phone_number,
+        from_=caller_id,
+        url=url_for(
+            'conference.join_conference',
+            conference_name=conference_name,
+            participant_label=participant_label,
+            role=role,
+            identity=identity,
+            _external=True
+        ),
+        method='POST'
+    )
+
+    # Persist the new call/participant details in our in-memory redis cache. If this
+    # conference hasn't been tracked yet (e.g. when add_participant_to_conference is
+    # called independently of warm_transfer/hold_call flows), we create the basic
+    # structure so that subsequent look-ups via the /conference/<name>/participants
+    # endpoint work as expected.
+    redis = current_app.config['redis']
+
+    if conference_name not in redis:
+        redis[conference_name] = {
+            "created_by": identity,
+            "calls": {},
+            "participants": {},
+        }
+
+    redis[conference_name]["calls"][call.sid] = {
+        "call_tag": participant_label,
+        "role": role,
+        "hold_on_conference_join": False,
+    }
+
+    redis[conference_name]['participants'][call.sid] = {
+        'participant_label': participant_label,
+        'call_sid': call.sid,
+        'muted': False,
+        'on_hold': False,
+        'role': role,
+    }
+
+    return call.sid
+
 
 @transfer_bp.route('/unhold-call', methods=['POST'])
 def unhold_call():

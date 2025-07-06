@@ -89,7 +89,7 @@
         id="phoneNumber"
         type="tel"
         placeholder="+14155551234"
-        value="client:debjyoti-dialer-app"
+        value="client:debjyoti"
         autocomplete="off"
         style="width: 100%; box-sizing: border-box"
       />
@@ -137,8 +137,8 @@
       const urlParams = new URLSearchParams(window.location.search);
       let myIdentity =
         urlParams.get("identity") ||
-        prompt("Enter your identity", "debjyoti-dialer-app") ||
-        "debjyoti-dialer-app";
+        prompt("Enter your identity", "debjyoti") ||
+        "debjyoti";
       const socket = io({ query: { identity: myIdentity } }); // Connect to Flask-SocketIO with identity
       const logEl = document.getElementById("log");
       const callButton = document.getElementById("call-button");
@@ -223,7 +223,12 @@
             resetCallUI();
           });
           device.on("incoming", (conn) => {
-            appendLog("📥 Incoming call received.");
+            const fromParam = conn.parameters ? conn.parameters.From : null;
+            if (fromParam && fromParam.startsWith("conference")) {
+              appendLog("📥 Incoming CONFERENCE invite.");
+            } else {
+              appendLog("📥 Incoming call received." + (fromParam ? ` (From: ${fromParam})` : ""));
+            }
             conn.accept();
           });
         } catch (err) {
@@ -309,9 +314,18 @@
           appendLog("⚠️ Child or Parent Call SID not yet available.");
           return;
         }
-        appendLog("🔀 Initiating warm transfer...");
-        const target = `client:${myIdentity}`;
-        warmTransfer(childCallSid, parentCallSid, target);
+
+        const dialers = getConnectedDialers();
+        if (dialers.length === 0) {
+          appendLog("⚠️ No active dialers available for warm transfer.");
+          transferButton.disabled = true;
+          return;
+        }
+
+        const transferTo = dialers[0]; // pick the first available dialer for now
+        const parentTarget = `client:${myIdentity}`;
+        appendLog(`🔀 Initiating warm transfer to ${transferTo}...`);
+        warmTransfer(childCallSid, parentCallSid, parentTarget, transferTo);
       });
 
       socket.on("call_event", (event) => {
@@ -351,8 +365,10 @@
           type === "child" &&
           (status === "in-progress" || status === "answered")
         ) {
-          if (!onHold && !currentConferenceName) holdConfButton.disabled = false;
-          if (!onHold && !currentConferenceName) transferButton.disabled = false;
+          if (!onHold && !currentConferenceName)
+            holdConfButton.disabled = false;
+          if (!onHold && !currentConferenceName)
+            transferButton.disabled = !hasConnectedDialers();
           unholdButton.disabled = true;
         }
 
@@ -518,7 +534,12 @@
           });
       }
 
-      function warmTransfer(childCallSid, parentCallSid, parentTarget) {
+      function warmTransfer(
+        childCallSid,
+        parentCallSid,
+        parentTarget,
+        transferTo
+      ) {
         const payload = {
           child_call_sid: childCallSid,
           parent_call_sid: parentCallSid,
@@ -534,12 +555,8 @@
             dialedTarget && dialedTarget.startsWith("client:")
               ? "agent"
               : "customer",
+          transfer_to: transferTo,
         };
-        appendLog(
-          `🔑 Sending warm-transfer payload for ${myIdentity} with payload: ${JSON.stringify(
-            payload
-          )}...`
-        );
         fetch("/transfer/warm-transfer", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -571,9 +588,21 @@
         },
         {
           name: "New Dialer",
-          number: "client:debjyoti-dialer-app",
+          number: "client:debjyoti",
         },
       ];
+
+      // New helper utilities to track other connected dialers
+      const getConnectedDialers = () =>
+        phoneNumbers
+          .filter(
+            (entry) =>
+              entry.number.startsWith("client:") &&
+              entry.number !== `client:${myIdentity}`
+          )
+          .map((entry) => entry.number);
+
+      const hasConnectedDialers = () => getConnectedDialers().length > 0;
 
       /**
        * Sync the dropdown list with the currently connected identities.
@@ -608,6 +637,11 @@
         } else {
           // If closed, mark it dirty so the next open gets a fresh render.
           customDropdown.dataset.dirty = "true";
+        }
+
+        // Disable transfer button if there are no other dialers
+        if (!hasConnectedDialers()) {
+          transferButton.disabled = true;
         }
       }
 
