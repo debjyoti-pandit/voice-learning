@@ -89,7 +89,7 @@
         id="phoneNumber"
         type="tel"
         placeholder="+14155551234"
-        value="+918617020252"
+        value="client:debjyoti-dialer-app"
         autocomplete="off"
         style="width: 100%; box-sizing: border-box"
       />
@@ -137,8 +137,8 @@
       const urlParams = new URLSearchParams(window.location.search);
       let myIdentity =
         urlParams.get("identity") ||
-        prompt("Enter your identity", "debjyoti-dialer-app") ||
-        "debjyoti-dialer-app";
+        prompt("Enter your identity", "browser") ||
+        "browser";
       const socket = io({ query: { identity: myIdentity } }); // Connect to Flask-SocketIO with identity
       const logEl = document.getElementById("log");
       const callButton = document.getElementById("call-button");
@@ -548,15 +548,10 @@
 
       // Custom dropdown logic (no Bootstrap)
       const customDropdown = document.getElementById("customDropdown");
-      const phoneNumbers = [
-        {
-          name: "Second In JustCall",
-          number: "+13614705746",
-        },
-        {
-          name: "Third In JustCall",
-          number: "+19037760728",
-        },
+
+      // Initial static entries – keep only the user's personal Jio number and a
+      // default browser dialer identity.
+      let phoneNumbers = [
         {
           name: "Personal Jio",
           number: "+918617020252",
@@ -567,7 +562,42 @@
         },
       ];
 
-      // "+13614705746", "+19037760728", "+918617020252"
+      /**
+       * Merge newly-discovered connected dialers into the phoneNumbers list.
+       * Each connected identity becomes a selectable `client:<identity>` entry.
+       */
+      function mergeConnectedDialers(identities) {
+        identities.forEach((id) => {
+          // Skip our own identity to avoid echo-calling ourselves.
+          if (id === myIdentity) return;
+
+          const num = `client:${id}`;
+          const exists = phoneNumbers.some((entry) => entry.number === num);
+          if (!exists) {
+            phoneNumbers.push({ name: `Client (${id})`, number: num });
+          }
+        });
+      }
+
+      // Fetch the initial set of connected dialers when the page loads.
+      async function loadInitialConnectedDialers() {
+        try {
+          const res = await fetch("/connected-dialers");
+          const identities = await res.json();
+          mergeConnectedDialers(identities);
+        } catch (e) {
+          console.error("Failed to load connected dialers", e);
+        }
+      }
+
+      // Keep the list up-to-date in real-time via Socket.IO broadcasts.
+      socket.on("connected_identities", (identities) => {
+        mergeConnectedDialers(identities);
+      });
+
+      // Kick off initial load.
+      loadInitialConnectedDialers();
+
       function renderDropdown() {
         customDropdown.innerHTML = "";
         phoneNumbers.forEach((entry) => {
