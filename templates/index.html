@@ -36,12 +36,8 @@
         background: #dc3545;
         color: #fff;
       }
-      #hold-button {
-        background: #ffc107;
-        color: #000;
-      }
       #hold-conf-button {
-        background: #20c997; /* Teal */
+        background: #ffc107; /* Teal */
         color: #fff;
       }
       #unhold-button {
@@ -121,8 +117,7 @@
 
     <button id="call-button">Call</button>
     <button id="hangup-button" disabled>Hang Up</button>
-    <button id="hold-button" disabled>Hold</button>
-    <button id="hold-conf-button" disabled>Warm Transfer</button>
+    <button id="hold-conf-button" disabled>Hold</button>
     <button id="unhold-button" disabled>Unhold</button>
 
     <div id="participants-section" style="margin-top: 2rem; display: none">
@@ -143,7 +138,6 @@
       const logEl = document.getElementById("log");
       const callButton = document.getElementById("call-button");
       const hangupButton = document.getElementById("hangup-button");
-      const holdButton = document.getElementById("hold-button");
       const holdConfButton = document.getElementById("hold-conf-button");
       const unholdButton = document.getElementById("unhold-button");
       const phoneInput = document.getElementById("phoneNumber");
@@ -201,7 +195,6 @@
             onHold = false;
             hangupButton.disabled = false;
             callButton.disabled = true;
-            holdButton.disabled = true;
             holdConfButton.disabled = true;
             unholdButton.disabled = true;
 
@@ -283,18 +276,6 @@
         resetCallUI();
       });
 
-      holdButton.addEventListener("click", () => {
-        if (!childCallSid || !parentCallSid) {
-          appendLog("⚠️ Child or Parent Call SID not yet available.");
-          return;
-        }
-        appendLog("⏸️ Placing child and parent calls on hold...");
-        onHold = true; // set early so disconnect handler knows
-        callButton.disabled = true;
-        const target = `client:${myIdentity}`;
-        holdCall(childCallSid, parentCallSid, target);
-      });
-
       holdConfButton.addEventListener("click", () => {
         if (!childCallSid || !parentCallSid) {
           appendLog("⚠️ Child or Parent Call SID not yet available.");
@@ -353,7 +334,6 @@
           type === "child" &&
           (status === "in-progress" || status === "answered")
         ) {
-          if (!onHold) holdButton.disabled = false;
           if (!onHold) holdConfButton.disabled = false;
           unholdButton.disabled = true;
         }
@@ -363,7 +343,6 @@
           type === "parent" &&
           (status === "in-progress" || status === "answered")
         ) {
-          holdButton.disabled = true;
           holdConfButton.disabled = true;
           unholdButton.disabled = true;
         }
@@ -452,33 +431,6 @@
         fetchAndRenderParticipants();
       });
 
-      function holdCall(childCallSid, parentCallSid, parentTarget) {
-        const payload = {
-          child_call_sid: childCallSid,
-          parent_call_sid: parentCallSid,
-          parent_target: parentTarget,
-          parent_name: "sachinists",
-        };
-        console.debug("Sending hold-call payload", payload);
-        fetch("/hold-call", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        })
-          .then((res) => res.json())
-          .then((data) => {
-            appendLog(`ℹ️ Hold response: ${JSON.stringify(data)}`);
-            onHold = true;
-            holdButton.disabled = true;
-            holdConfButton.disabled = true;
-            unholdButton.disabled = false;
-            hangupButton.disabled = true;
-          })
-          .catch((err) => {
-            appendLog(`❌ Hold request error: ${err.message}`);
-          });
-      }
-
       function holdCallViaConference(
         childCallSid,
         parentCallSid,
@@ -518,7 +470,7 @@
             );
             onHold = true;
             holdConfButton.disabled = true;
-            holdButton.disabled = true;
+            callButton.disabled = true;
             unholdButton.disabled = true; // No unhold for conf hold
             hangupButton.disabled = false; // Allow disconnect
           })
@@ -766,7 +718,6 @@
       function resetCallUI() {
         callButton.disabled = false;
         hangupButton.disabled = true;
-        holdButton.disabled = true;
         holdConfButton.disabled = true;
         unholdButton.disabled = true;
       }
