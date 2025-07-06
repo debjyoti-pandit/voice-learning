@@ -143,9 +143,6 @@ def hold_call_via_conference():
         return jsonify({'error': 'Missing name(s)'}), 400
 
     conference_name = f"{parent_name}'s-conference-with-{child_name}"
-    print(f"Conference name: {conference_name}")
-    print(f"Parent call SID: {parent_call_sid}")
-    print(f"Child call SID: {child_call_sid}")
 
     recordings = {}
     try:
@@ -183,7 +180,6 @@ def hold_call_via_conference():
             },
             "participants": {}
         }
-        print(f"url: {url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=child_name, start_conference_on_enter=False, end_conference_on_exit=True, role=child_role, identity=identity)}")
         client.calls(child_call_sid).update(
             url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=child_name, start_conference_on_enter=False, end_conference_on_exit=True, role=child_role, identity=identity),
             method='POST',

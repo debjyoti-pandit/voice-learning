@@ -586,8 +586,6 @@
         try {
           const res = await fetch(`/conference/${encodeURIComponent(currentConferenceName)}/participants?call_sid=${myCallSid}`);
           const participants = await res.json();
-          // Debug: print the full participants array to the log
-          appendLog('[DEBUG] Participants: ' + JSON.stringify(participants));
           const list = document.getElementById('participants-list');
           list.innerHTML = '';
           participants.forEach(p => {

@@ -22,7 +22,7 @@ class ConferenceEventsHandler:
         """Process the incoming Flask request and emit a structured Socket.IO event."""
         values = flask_request.values
 
-        # Determine identity/room for scoped Socket.IO emission (mirrors CallEventsHandler logic)
+                                                                                                 
         identity = flask_request.args.get('identity') or flask_request.values.get('identity')
         print(f"Identity: {identity}")
 
@@ -53,15 +53,15 @@ class ConferenceEventsHandler:
 
         print(f"Event type: {event_type}, Call sid: {call_sid}, sequence number: {sequence_number}, timestamp: {timestamp}, participant label: {participant_label}, hold: {hold}, muted: {muted}, role: {role}")
                                  
-        # if event_type in ("mute", "participant-hold"):
-        #     print(participants)
-        #     if call_sid in participants:
-        #         print(call_sid)
-        #         if event_type == "mute" and muted is not None:
-        #             participants[call_sid]["muted"] = bool(muted)
-        #         if event_type == "hold" and hold is not None:
-        #             print('in hold change', bool(hold))
-        #             participants[call_sid]["on_hold"] = bool(hold)
+                                                        
+                                 
+                                          
+                                 
+                                                                
+                                                                   
+                                                               
+                                                         
+                                                                    
         if event_type == "participant-leave":
             if call_sid in participants:
                 participants[call_sid]["left"] = True
@@ -108,7 +108,7 @@ class ConferenceEventsHandler:
 
         event_data = {k: v for k, v in event_data.items() if v is not None}
 
-        # Emit to the scoped room if identity is known, else broadcast (legacy behaviour)
+                                                                                         
         if identity:
             self.socketio.emit("conference_event", event_data, room=identity)
         else:

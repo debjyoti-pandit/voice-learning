@@ -19,7 +19,7 @@ load_dotenv()
                                                                              
 
 app = Flask(__name__)
-# Ensure we capture INFO logs regardless of debug mode
+                                                      
 app.logger.setLevel(logging.INFO)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
@@ -56,7 +56,7 @@ app.register_blueprint(events_bp)
 app.register_blueprint(conference_bp)
 app.register_blueprint(hold_bp)
 
-# Register Socket.IO event handlers for identity-based rooms
+                                                            
 @socketio.on('connect')
 def handle_socket_connect():
     """Add the connecting client to a room matching its identity (if provided)."""
