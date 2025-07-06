@@ -16,7 +16,7 @@ CALLER_ID = os.getenv('CALLER_ID')
 @hold_bp.route('/hold-call', methods=['POST'])
 def hold_call():
     """Move CHILD leg into a hold‐music conference and hang up the PARENT leg."""
-                                                                                                 
+
     data = request.get_json(silent=True)
     if data is None:
         return jsonify({'error': 'Invalid or missing JSON payload'}), 400
@@ -26,7 +26,7 @@ def hold_call():
     call_log = current_app.config['call_log']
     child_call_sid = data.get('child_call_sid')
     parent_call_sid = data.get('parent_call_sid')
-    parent_target = data.get('parent_target')                                         
+    parent_target = data.get('parent_target')
 
     if not child_call_sid or not parent_call_sid:
         return jsonify({'error': 'Missing call SID(s)'}), 400
@@ -34,13 +34,12 @@ def hold_call():
     conference_name = f"CallRoom_{parent_call_sid}"
 
     try:
-                                                 
+
         child_call = client.calls(child_call_sid).fetch()
         if child_call.status != "in-progress":
             current_app.logger.error(f"Child call {child_call_sid} is not in-progress (status: {child_call.status})")
             return jsonify({'error': f'Child call {child_call_sid} is not in-progress (status: {child_call.status})'}), 400
 
-                                                  
         parent_call = client.calls(parent_call_sid).fetch()
         if parent_call.status != "in-progress":
             current_app.logger.error(f"Parent call {parent_call_sid} is not in-progress (status: {parent_call.status})")
@@ -51,13 +50,11 @@ def hold_call():
             method='POST',
         )
 
-                                                                               
         client.calls(parent_call_sid).update(
             url=url_for('conference.connect_to_conference', _external=True, conference_name=conference_name),
             method='POST',
         )
 
-                                                                                          
         conf_sid = None
         for _ in range(5):
             try:
@@ -73,7 +70,6 @@ def hold_call():
                 current_app.logger.warning("Error while searching for conference: %s. Retrying…", e)
             time.sleep(1)
 
-                                                                                         
         if conf_sid:
             try:
                 participants = client.conferences(conf_sid).participants.list(limit=50)
@@ -101,7 +97,7 @@ def hold_call():
                     parent_number = cand_to
 
         if not parent_number:
-                                             
+
             try:
                 parent_number = client.calls(parent_call_sid).fetch().from_
             except Exception:
@@ -131,7 +127,7 @@ def hold_call_via_conference():
     child_call_sid = data.get('child_call_sid')
     parent_call_sid = data.get('parent_call_sid')
     parent_name = data.get('parent_name')
-    child_name = data.get('child_name')                                      
+    child_name = data.get('child_name')
     parent_role = data.get('parent_role', 'agent')
     child_role = data.get('child_role', 'customer')
     identity = data.get('identity')
@@ -197,7 +193,7 @@ def hold_call_via_conference():
             method='POST',
         )
         print('after joining the parent call to the conference')
-                                                       
+
         redis[conference_name]['participants'][parent_call_sid] = {
             'participant_label': parent_name,
             'call_sid': parent_call_sid,
@@ -210,8 +206,6 @@ def hold_call_via_conference():
         return jsonify({'error': str(e)}), 500
 
     return jsonify({'message': 'both legs in conference'}), 200
-
-
 
 @hold_bp.route('/unhold-call', methods=['POST'])
 def unhold_call():
@@ -226,7 +220,6 @@ def unhold_call():
     if not parent_number:
         return jsonify({'error': 'Parent number not found for given SID'}), 400
 
-                                                             
     conf_sid = None
     for _ in range(5):
         try:
@@ -245,7 +238,6 @@ def unhold_call():
     if not conf_sid:
         return jsonify({'error': 'Conference not found or not in progress'}), 404
 
-                                            
     try:
         participants = client.conferences(conf_sid).participants.list(limit=20)
         for participant in participants:
@@ -253,7 +245,6 @@ def unhold_call():
     except Exception as err:
         current_app.logger.warning("Could not play greeting to child leg: %s", err)
 
-                          
     try:
         client.calls.create(
             url=url_for('conference.connect_to_conference', _external=True, conference_name=conference_friendly_name),
@@ -264,10 +255,9 @@ def unhold_call():
     except Exception as e:
         return jsonify({'error': f'Failed to redial parent: {e}'}), 500
 
-
 @hold_bp.route('/hold_music', methods=['GET', 'POST'])
 def hold_music():
     response = VoiceResponse()
-                                                                                      
+
     response.play("https://com.twilio.music.classical.s3.amazonaws.com/BusyStrings.mp3", loop=0)
     return xml_response(response)

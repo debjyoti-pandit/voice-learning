@@ -10,7 +10,6 @@ voice_bp = Blueprint('voice', __name__)
 
 CALLER_ID = os.getenv('CALLER_ID')
 
-
 @voice_bp.route('/voice', methods=['POST'])
 def voice():
     to_number = request.values.get('To')
@@ -55,7 +54,6 @@ def voice():
 
     return xml_response(response)
 
-
 @voice_bp.route('/hangup', methods=['GET', 'POST'])
 def hangup_call():
     """Terminate the current call leg."""
@@ -63,10 +61,9 @@ def hangup_call():
     resp.hangup()
     return xml_response(resp)
 
-
 @voice_bp.route('/answer', methods=['GET', 'POST'])
 def answer_call():
     """Play a simple thank-you message to the caller."""
     resp = VoiceResponse()
     resp.say("Thank you for calling! Have a great day.")
-    return xml_response(resp) 
+    return xml_response(resp)

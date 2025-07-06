@@ -16,14 +16,14 @@ def strip_python_comments(path: pathlib.Path) -> None:
     tokens = tokenize.generate_tokens(io.StringIO(source).readline)
     filtered = [tok for tok in tokens if tok.type != tokenize.COMMENT]
     new_source = tokenize.untokenize(filtered)
-    path.write_text(new_source)
+    path.write_text(normalize_whitespace(new_source))
 
 
 def strip_html_comments(path: pathlib.Path) -> None:
     """Overwrite an HTML file with all <!-- ... --> blocks removed (multi-line safe)."""
     source = path.read_text()
     cleaned = re.sub(r"<!--.*?-->", "", source, flags=re.DOTALL)
-    path.write_text(cleaned)
+    path.write_text(normalize_whitespace(cleaned))
 
 
 def main() -> None:
@@ -36,6 +36,30 @@ def main() -> None:
 
     for html_file in repo_root.rglob("*.html"):
         strip_html_comments(html_file)
+
+
+# Helper --------------------------------------------------------------
+def normalize_whitespace(text: str) -> str:
+    """Return *text* with trailing spaces removed and consecutive blank lines
+    collapsed to a single blank line. Ensures the final string ends with a
+    newline when non-empty."""
+
+    # Strip trailing whitespace from each line
+    lines = [line.rstrip() for line in text.splitlines()]
+
+    # Collapse multiple blank lines into a single blank line
+    normalized_lines = []
+    previous_blank = False
+    for line in lines:
+        if line == "":
+            if not previous_blank:
+                normalized_lines.append(line)
+            previous_blank = True
+        else:
+            normalized_lines.append(line)
+            previous_blank = False
+
+    return "\n".join(normalized_lines) + ("\n" if normalized_lines else "")
 
 
 if __name__ == "__main__":

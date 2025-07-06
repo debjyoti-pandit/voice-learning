@@ -24,7 +24,6 @@ def get_value(obj, key):
     except (KeyError, TypeError):
         return None
 
-
 @conference_bp.route('/join_conference', methods=['POST', 'GET'])
 def join_conference():
     conference_name = request.args.get('conference_name', 'DefaultRoom')
@@ -33,7 +32,6 @@ def join_conference():
     end_conference_on_exit = str2bool(request.args.get('end_conference_on_exit'), True)
     muted = str2bool(request.args.get('mute'), False)
     participant_label = request.args.get('participant_label', 'DefaultParticipant')
-    
 
     response = VoiceResponse()
 
@@ -45,7 +43,7 @@ def join_conference():
         print(f"caller_identity is not present for conference: {conference_name} so not adding it to the status callback url")
         return base
 
-    dial = response.dial(record='record-from-answer-dual')                            
+    dial = response.dial(record='record-from-answer-dual')
     dial.conference(
         conference_name,
         wait_url=url_for('hold.hold_music', _external=True),
@@ -64,9 +62,8 @@ def join_conference():
 def conference_events():
     """Webhook endpoint for Twilio conference status callbacks."""
     socketio = current_app.config['socketio']
-                                                                           
-    return ConferenceEventsHandler(socketio).handle(request)
 
+    return ConferenceEventsHandler(socketio).handle(request)
 
 @conference_bp.route('/connect_to_conference', methods=['POST', 'GET'])
 def connect_to_conference():
@@ -98,7 +95,6 @@ def connect_to_conference():
     )
     return xml_response(response)
 
-
 @conference_bp.route('/conference-announcement', methods=['POST', 'GET'])
 def conference_announcement():
     response = VoiceResponse()
@@ -111,7 +107,7 @@ def get_conference_participants(conference_name):
     participants = redis.get(conference_name, {}).get('participants', {})
     result = []
     for sid, info in participants.items():
-                                                                    
+
         result.append({
             'participant_label': info.get('participant_label'),
             'muted': info.get('muted'),
@@ -134,7 +130,7 @@ def mute_participant():
         return abort(400, 'Missing conference_sid or call_sid')
     try:
         client.conferences(conf_sid).participants(call_sid).update(muted=bool(mute))
-                            
+
         p = redis[conference_name]['participants'].get(call_sid)
         if p:
             p['muted'] = bool(mute)
@@ -155,7 +151,7 @@ def hold_participant():
         return abort(400, 'Missing conference_sid or call_sid')
     try:
         client.conferences(conf_sid).participants(call_sid).update(hold=bool(hold))
-                            
+
         p = redis[conference_name]['participants'].get(call_sid)
         if p:
             p['on_hold'] = bool(hold)
@@ -168,7 +164,7 @@ def kick_participant():
     data = request.get_json()
     conference_name = data.get('conference_name')
     call_sid = data.get('call_sid')
-                                                                                
+
     requester_call_sid = request.args.get('call_sid') or data.get('requester_call_sid')
     if requester_call_sid and call_sid == requester_call_sid:
         return jsonify({'success': False, 'error': 'You cannot kick yourself.'}), 400
@@ -179,10 +175,10 @@ def kick_participant():
         return abort(400, 'Missing conference_sid or call_sid')
     try:
         client.conferences(conf_sid).participants(call_sid).delete()
-                            
+
         p = redis[conference_name]['participants'].get(call_sid)
         if p:
             p['left'] = True
         return jsonify({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500 
+        return jsonify({'success': False, 'error': str(e)}), 500

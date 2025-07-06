@@ -8,12 +8,10 @@ load_dotenv()
 
 auth_bp = Blueprint('auth', __name__)
 
-                                                                            
 TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
 TWILIO_API_KEY = os.getenv('TWILIO_API_KEY')
 TWILIO_API_SECRET = os.getenv('TWILIO_API_SECRET')
 TWIML_APP_SID = os.getenv('TWIML_APP_SID')
-
 
 @auth_bp.route('/token', methods=['GET'])
 def token():
@@ -33,4 +31,4 @@ def token():
     if isinstance(jwt_token, bytes):
         jwt_token = jwt_token.decode()
 
-    return jsonify(token=jwt_token, identity=identity) 
+    return jsonify(token=jwt_token, identity=identity)

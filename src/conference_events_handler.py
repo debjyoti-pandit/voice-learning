@@ -10,25 +10,22 @@ def str2bool(val, default=False):
         return val.lower() in ('true', '1', 'yes')
     return default
 
-
 class ConferenceEventsHandler:
     """Encapsulates the business logic for processing Twilio conference-status callbacks."""
 
     def __init__(self, socketio: SocketIO):
         self.socketio = socketio
 
-
     def handle(self, flask_request):
         """Process the incoming Flask request and emit a structured Socket.IO event."""
         values = flask_request.values
 
-                                                                                                 
         identity = flask_request.args.get('identity') or flask_request.values.get('identity')
         print(f"Identity: {identity}")
 
         event_type = values.get("StatusCallbackEvent")
         conference_sid = values.get("ConferenceSid")
-        call_sid = values.get("CallSid")                                             
+        call_sid = values.get("CallSid")
         friendly_name = values.get("FriendlyName")
         sequence_number = values.get("SequenceNumber")
         timestamp = values.get("Timestamp")
@@ -44,7 +41,7 @@ class ConferenceEventsHandler:
         redis[friendly_name].setdefault("participants", {})
         participants = redis[friendly_name]["participants"]
         calls = redis[friendly_name].get("calls", {})
-                                                                  
+
         role = None
         if call_sid in calls:
             role = calls[call_sid].get("role")
@@ -52,16 +49,7 @@ class ConferenceEventsHandler:
             role = values.get("role")
 
         print(f"Event type: {event_type}, Call sid: {call_sid}, sequence number: {sequence_number}, timestamp: {timestamp}, participant label: {participant_label}, hold: {hold}, muted: {muted}, role: {role}")
-                                 
-                                                        
-                                 
-                                          
-                                 
-                                                                
-                                                                   
-                                                               
-                                                         
-                                                                    
+
         if event_type == "participant-leave":
             if call_sid in participants:
                 participants[call_sid]["left"] = True
@@ -72,7 +60,7 @@ class ConferenceEventsHandler:
                     print(f"Holding on conference join for call label: {redis[friendly_name]['calls'][call_sid]['call_tag']}")
                     client = current_app.config['twilio_client']
                     app = current_app._get_current_object()
-                                                                                
+
                     threading.Thread(
                         target=self._put_participant_on_hold,
                         args=(client, conference_sid, call_sid, friendly_name, redis, url_for, app),
@@ -82,7 +70,7 @@ class ConferenceEventsHandler:
             print(f"Event type: {event_type}, Call sid: {call_sid}, Friendly name: {friendly_name}")
             return "", 204
 
-        print("after trying to hold")                                                                                           
+        print("after trying to hold")
         call_sid = (
             values.get("CallSid")
             or values.get("CallSidEndingConference")
@@ -108,7 +96,6 @@ class ConferenceEventsHandler:
 
         event_data = {k: v for k, v in event_data.items() if v is not None}
 
-                                                                                         
         if identity:
             self.socketio.emit("conference_event", event_data, room=identity)
         else:
@@ -116,7 +103,7 @@ class ConferenceEventsHandler:
 
         current_app.logger.info("📢 Conference event emitted: %s", event_data)
 
-        return "", 204 
+        return "", 204
 
     def _put_participant_on_hold(self, client, conference_sid, call_sid, friendly_name, redis, url_for_func, app):
         with app.app_context():
@@ -132,4 +119,4 @@ class ConferenceEventsHandler:
                     break
                 except Exception as e:
                     print(f"[Retry {attempt+1}/5] Failed to put on hold: {e}")
-                    time.sleep(1) 
+                    time.sleep(1)

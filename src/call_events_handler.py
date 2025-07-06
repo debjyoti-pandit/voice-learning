@@ -1,14 +1,12 @@
 import time
 from flask_socketio import SocketIO
 
-
 class CallEventsHandler:
     """Encapsulates the business logic for processing Twilio call-event webhooks."""
 
     def __init__(self, socketio: SocketIO, call_log: dict):
         self.socketio = socketio
         self.call_log = call_log
-
 
     def handle(self, flask_request):
         """Process the incoming Flask request and emit events."""
@@ -27,7 +25,6 @@ class CallEventsHandler:
 
         log_key = self._ensure_log_entry(sid, parent_sid, call_type)
 
-                                     
         self.call_log[log_key]['events'].append({
             'status': status,
             'from': from_number,
@@ -36,7 +33,6 @@ class CallEventsHandler:
             'duration': duration,
         })
 
-                                   
         if status == 'ringing':
             self.call_log[log_key]['ringing_time'] = timestamp
         elif status == 'answered':
@@ -44,10 +40,8 @@ class CallEventsHandler:
         elif status in ['completed', 'no-answer', 'busy', 'failed']:
             self.call_log[log_key]['end_time'] = timestamp
 
-                            
         self._emit_status_event(call_type, sid, parent_sid, status, from_number, to_number, timestamp, duration, identity)
 
-                                        
         self._maybe_emit_ring_duration(log_key, call_type, sid, parent_sid, timestamp, identity)
 
         return '', 204
@@ -57,13 +51,12 @@ class CallEventsHandler:
         if identity is None:
             print("Identity is None, skipping emit from parent child sids")
             return
-                             
+
         if call_type == 'parent':
             if not self.call_log.get(sid, {}).get('parent_sid_emitted'):
                 self.socketio.emit("parent_call_sid", {"parent_sid": sid}, room=identity)
                 self.call_log.setdefault(sid, {})['parent_sid_emitted'] = True
 
-                            
         if call_type == 'child':
             if not self.call_log.get(parent_sid, {}).get('parent_sid_emitted'):
                 self.socketio.emit("parent_call_sid", {"parent_sid": parent_sid}, room=identity)
@@ -102,7 +95,7 @@ class CallEventsHandler:
         if identity is None:
             print("Identity is None, skipping emit from call status event")
             return
-        
+
         event_data = {
             'sid': sid,
             'parent_sid': parent_sid,
