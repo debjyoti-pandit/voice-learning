@@ -122,7 +122,7 @@
     <button id="call-button">Call</button>
     <button id="hangup-button" disabled>Hang Up</button>
     <button id="hold-button" disabled>Hold</button>
-    <button id="hold-conf-button" disabled>Hold Conf</button>
+    <button id="hold-conf-button" disabled>Warm Transfer</button>
     <button id="unhold-button" disabled>Unhold</button>
 
     <div id="participants-section" style="margin-top: 2rem; display: none">
@@ -137,8 +137,8 @@
       const urlParams = new URLSearchParams(window.location.search);
       let myIdentity =
         urlParams.get("identity") ||
-        prompt("Enter your identity", "browser") ||
-        "browser";
+        prompt("Enter your identity", "debjyoti-dialer-app") ||
+        "debjyoti-dialer-app";
       const socket = io({ query: { identity: myIdentity } }); // Connect to Flask-SocketIO with identity
       const logEl = document.getElementById("log");
       const callButton = document.getElementById("call-button");
@@ -563,20 +563,39 @@
       ];
 
       /**
-       * Merge newly-discovered connected dialers into the phoneNumbers list.
-       * Each connected identity becomes a selectable `client:<identity>` entry.
+       * Sync the dropdown list with the currently connected identities.
+       * 1. Remove any `client:<id>` entry that is no longer connected.
+       * 2. Add any newly-connected identity that isn't already present.
+       * 3. Always skip our own identity (myIdentity).
+       * 4. Refresh the dropdown UI so the user instantly sees the change.
        */
       function mergeConnectedDialers(identities) {
-        identities.forEach((id) => {
-          // Skip our own identity to avoid echo-calling ourselves.
-          if (id === myIdentity) return;
+        // Step 1: prune disconnected identities
+        phoneNumbers = phoneNumbers.filter((entry) => {
+          if (!entry.number.startsWith("client:")) return true; // keep non-client entries
+          const entryId = entry.number.substring(7);
+          return identities.includes(entryId);
+        });
 
+        // Step 2: add newly connected identities (except ourselves)
+        identities.forEach((id) => {
+          if (id === myIdentity) return; // never include self
           const num = `client:${id}`;
           const exists = phoneNumbers.some((entry) => entry.number === num);
           if (!exists) {
             phoneNumbers.push({ name: `Client (${id})`, number: num });
           }
         });
+
+        // Step 3: refresh dropdown UI
+        const wasOpen = customDropdown.style.display !== "none";
+        if (wasOpen) {
+          // If it's currently open, re-render immediately so the list updates in place.
+          renderDropdown();
+        } else {
+          // If closed, mark it dirty so the next open gets a fresh render.
+          customDropdown.dataset.dirty = "true";
+        }
       }
 
       // Fetch the initial set of connected dialers when the page loads.
@@ -600,31 +619,38 @@
 
       function renderDropdown() {
         customDropdown.innerHTML = "";
-        phoneNumbers.forEach((entry) => {
-          const li = document.createElement("li");
-          li.textContent = `${entry.name}: ${entry.number}`;
-          li.style.padding = "0.5rem 1rem";
-          li.style.cursor = "pointer";
-          li.style.textAlign = "left";
-          li.style.fontFamily = "'Comic Sans MS', 'Comic Sans', cursive";
-          li.addEventListener("mousedown", (e) => {
-            e.preventDefault();
-            phoneInput.value = entry.number;
-            customDropdown.style.display = "none";
+        phoneNumbers
+          .filter((entry) => entry.number !== `client:${myIdentity}`)
+          .forEach((entry) => {
+            const li = document.createElement("li");
+            li.textContent = `${entry.name}: ${entry.number}`;
+            li.style.padding = "0.5rem 1rem";
+            li.style.cursor = "pointer";
+            li.style.textAlign = "left";
+            li.style.fontFamily = "'Comic Sans MS', 'Comic Sans', cursive";
+            li.addEventListener("mousedown", (e) => {
+              e.preventDefault();
+              phoneInput.value = entry.number;
+              customDropdown.style.display = "none";
+            });
+            li.addEventListener("mouseover", () => {
+              li.style.background = "#f0f0f0";
+            });
+            li.addEventListener("mouseout", () => {
+              li.style.background = "#fff";
+            });
+            customDropdown.appendChild(li);
           });
-          li.addEventListener("mouseover", () => {
-            li.style.background = "#f0f0f0";
-          });
-          li.addEventListener("mouseout", () => {
-            li.style.background = "#fff";
-          });
-          customDropdown.appendChild(li);
-        });
         customDropdown.style.display = "block";
       }
 
       phoneInput.addEventListener("focus", () => {
-        renderDropdown();
+        if (customDropdown.dataset.dirty === "true") {
+          renderDropdown();
+          delete customDropdown.dataset.dirty;
+        } else {
+          renderDropdown();
+        }
       });
       phoneInput.addEventListener("input", () => {
         renderDropdown();

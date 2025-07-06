@@ -46,6 +46,10 @@ app.register_blueprint(hold_bp)
 # Track currently connected Socket.IO client identities so that the web dialer can
 # populate a dropdown with live targets.
 connected_identities: set[str] = set()
+# Map Socket.IO session IDs -> identity strings so we can reliably clean up
+# when a client disconnects (``request.args`` is not available in the
+# disconnect handler).
+sid_to_identity: dict[str, str] = {}
 
 @socketio.on('connect')
 def handle_socket_connect():
@@ -60,6 +64,8 @@ def handle_socket_connect():
     identity = request.args.get('identity')
     if identity:
         join_room(identity)
+        # Record mapping so we can look it up on disconnect
+        sid_to_identity[request.sid] = identity
         connected_identities.add(identity)
         # Broadcast the updated list to every client (no specific room).
         socketio.emit('connected_identities', list(connected_identities))
@@ -70,13 +76,20 @@ def handle_socket_connect():
 @socketio.on('disconnect')
 def handle_socket_disconnect():
     """Clean up tracking state when a Socket.IO client disconnects."""
-    identity = request.args.get('identity')
+    sid = request.sid
+    identity = sid_to_identity.pop(sid, None)
+
     if identity:
-        connected_identities.discard(identity)
+        # If no other active socket is using the same identity, remove it from the set
+        if identity not in sid_to_identity.values():
+            connected_identities.discard(identity)
+
         socketio.emit('connected_identities', list(connected_identities))
-        app.logger.info(f"🔌 Client with identity '{identity}' disconnected")
+        app.logger.info(f"🔌 Client with identity '{identity}' disconnected (sid={sid})")
+        # Optionally leave the room
+        leave_room(identity)
     else:
-        app.logger.info("🔌 Client disconnected without identity")
+        app.logger.info(f"🔌 Client disconnected without tracked identity (sid={sid})")
 
 # ---------------------------------------------------------------------------
 # HTTP helpers
