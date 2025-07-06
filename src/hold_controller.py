@@ -142,16 +142,22 @@ def hold_call_via_conference():
 
     conference_name = f"{parent_name}'s-conference-with-{child_name}"
     print(f"Conference name: {conference_name}")
+    print(f"Parent call SID: {parent_call_sid}")
+    print(f"Child call SID: {child_call_sid}")
 
     recordings = {}
     try:
         recording = client.recordings.list(call_sid=parent_call_sid, limit=1)
+        print('parent recording')
+        print(recording)
         if recording:
             print(f"Stopping initial recording for parent call: {recording[0].sid}")
             recordings[parent_call_sid] = recording[0].sid
             client.recordings(recording[0].sid).update(status='stopped')
         else:
             recording = client.recordings.list(call_sid=child_call_sid, limit=1)
+            print('child recording')
+            print(recording)
             if recording:
                 print(f"Stopping initial recording for child call: {recording[0].sid}")
                 recordings[child_call_sid] = recording[0].sid
@@ -159,6 +165,8 @@ def hold_call_via_conference():
     except Exception as e:
         current_app.logger.warning(f"Could not access recordings to stop initial: {e}")
 
+    print('after fetching the recordings')
+    print(recordings)
     try:
         redis = current_app.config['redis']
         redis[conference_name] = {
@@ -178,12 +186,11 @@ def hold_call_via_conference():
            },
            "participants": {}
         }
-        print(redis)
         client.calls(child_call_sid).update(
             url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=child_name, start_conference_on_enter=False, end_conference_on_exit=True, role=child_role),
             method='POST',
         )
-                                                           
+        print('after joining the child call to the conference')
         redis[conference_name]['participants'][child_call_sid] = {
             'participant_label': child_name,
             'call_sid': child_call_sid,
@@ -195,6 +202,7 @@ def hold_call_via_conference():
             url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=parent_name, start_conference_on_enter=True, end_conference_on_exit=False, mute=True, role=parent_role),
             method='POST',
         )
+        print('after joining the parent call to the conference')
                                                        
         redis[conference_name]['participants'][parent_call_sid] = {
             'participant_label': parent_name,

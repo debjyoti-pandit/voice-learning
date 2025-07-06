@@ -41,6 +41,9 @@ app.config['call_log'] = call_log
 redis: dict[str, dict] = {}
 app.config['redis'] = redis
 
+app.config['SERVER_NAME'] = 'debjyoti-voice-learning.ngrok-free.app'
+app.config['PREFERRED_URL_SCHEME'] = 'https'
+
                              
 app.register_blueprint(templates_bp)
 app.register_blueprint(auth_bp)

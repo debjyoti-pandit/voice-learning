@@ -433,6 +433,8 @@
           showParticipantsSection(false);
           stopParticipantsPolling();
         }
+        // Always fetch and re-render participants after any conference event
+        fetchAndRenderParticipants();
       });
 
       function holdCall(childCallSid, parentCallSid, parentTarget) {
