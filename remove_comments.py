@@ -49,15 +49,16 @@ def normalize_whitespace(text: str) -> str:
 
     # Collapse multiple blank lines into a single blank line
     normalized_lines = []
-    previous_blank = False
+    blank_run = 0  # Number of consecutive blank lines encountered
+
     for line in lines:
         if line == "":
-            if not previous_blank:
+            if blank_run < 2:  # Allow up to two consecutive blank lines
                 normalized_lines.append(line)
-            previous_blank = True
+            blank_run += 1
         else:
             normalized_lines.append(line)
-            previous_blank = False
+            blank_run = 0
 
     return "\n".join(normalized_lines) + ("\n" if normalized_lines else "")
 

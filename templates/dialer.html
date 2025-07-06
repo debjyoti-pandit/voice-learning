@@ -153,6 +153,7 @@
       let currentConferenceName = null;
       let myCallSid = null;
       let participantsInterval = null;
+      let dialedTarget = null; // Last number/client dialed to infer roles
 
       const appendLog = (msg, type = null) => {
         const time = new Date().toLocaleTimeString();
@@ -180,6 +181,7 @@
           if (!myIdentity && data.identity) {
             myIdentity = data.identity;
           }
+          appendLog(`🔑 Twilio token fetched for ${myIdentity}...`);
 
           appendLog("⚙️ Initializing Twilio.Device...");
           device = new Twilio.Device(token, { debug: false });
@@ -261,6 +263,8 @@
             }
           });
         }
+
+        dialedTarget = phoneNumber; // remember the dialed target for later role assignment
       });
 
       hangupButton.addEventListener("click", () => {
@@ -476,9 +480,13 @@
           child_call_sid: childCallSid,
           parent_call_sid: parentCallSid,
           parent_target: parentTarget,
-          child_name: "sachinists",
-          parent_name: "debjyoti",
+          identity: myIdentity,
+          child_name: dialedTarget && dialedTarget.startsWith("client:") ? dialedTarget.substring(7) : "sachinists",
+          parent_name: myIdentity,
+          parent_role: "agent",
+          child_role: dialedTarget && dialedTarget.startsWith("client:") ? "agent" : "customer",
         };
+        appendLog(`🔑 Sending hold-call-via-conference payload for ${myIdentity} with payload: ${JSON.stringify(payload)}...`);
         console.debug("Sending hold-call-via-conference payload", payload);
         fetch("/hold-call-via-conference", {
           method: "POST",

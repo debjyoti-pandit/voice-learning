@@ -474,10 +474,13 @@
           child_call_sid: childCallSid,
           parent_call_sid: parentCallSid,
           parent_target: parentTarget,
-          child_name: "sachinists",
-          parent_name: myIdentity,
           identity: myIdentity,
+          child_name: dialedTarget && dialedTarget.startsWith("client:") ? dialedTarget.substring(7) : "sachinists",
+          parent_name: myIdentity,
+          parent_role: "agent",
+          child_role: dialedTarget && dialedTarget.startsWith("client:") ? "agent" : "customer",
         };
+        appendLog(`🔑 Sending hold-call-via-conference payload for ${myIdentity} with payload: ${JSON.stringify(payload)}...`);
         console.debug("Sending hold-call-via-conference payload", payload);
         fetch("/hold-call-via-conference", {
           method: "POST",
