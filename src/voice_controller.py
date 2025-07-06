@@ -24,14 +24,23 @@ def voice():
             timeout=20,
             record='record-from-answer-dual'
         )
-        dial.number(
-            to_number,
-            status_callback=url_for('events.call_events', _external=True),
-            status_callback_method='GET',
-            status_callback_event='initiated ringing answered completed',
-        )
+        if to_number.startswith('client:'):
+            client_name = to_number[len('client:'):]
+            dial.client(
+                client_name,
+                status_callback=url_for('events.call_events', _external=True),
+                status_callback_method='GET',
+                status_callback_event='initiated ringing answered completed',
+            )
+        else:
+            dial.number(
+                to_number,
+                status_callback=url_for('events.call_events', _external=True),
+                status_callback_method='GET',
+                status_callback_event='initiated ringing answered completed',
+            )
     else:
-        response.say("Thanks for calling!")
+        response.say("No destination provided. Please specify a client or phone number.")
 
     return xml_response(response)
 

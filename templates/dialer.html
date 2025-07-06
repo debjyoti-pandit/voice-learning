@@ -1,9 +1,8 @@
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Twilio Browser Dialer (Multi-Identity)</title>
+    <title>Twilio Browser Dialer</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link
       rel="stylesheet"
@@ -41,6 +40,14 @@
         background: #ffc107;
         color: #000;
       }
+      #hold-conf-button {
+        background: #20c997; /* Teal */
+        color: #fff;
+      }
+      #unhold-button {
+        background: #198754;
+        color: #fff;
+      }
       button[disabled] {
         opacity: 0.5;
         cursor: not-allowed;
@@ -66,85 +73,144 @@
         border-radius: 0.4rem;
         margin-bottom: 0.5rem;
       }
+      .log-conference {
+        background-color: #cff4fc; /* Blue */
+        padding: 0.5rem;
+        border-radius: 0.4rem;
+        margin-bottom: 0.5rem;
+      }
     </style>
   </head>
   <body>
     <h1>Twilio Browser Dialer</h1>
-    <p id="identity-label"></p>
 
-    <input
-      id="phoneNumber"
-      type="tel"
-      placeholder="+918617020252"
-      value="+918617020252"
-    />
+    <div style="max-width: 100%; margin: 0 auto; position: relative">
+      <input
+        id="phoneNumber"
+        type="tel"
+        placeholder="+14155551234"
+        value="client:debjyoti-dialer-app"
+        autocomplete="off"
+        style="width: 100%; box-sizing: border-box"
+      />
+      <ul
+        id="customDropdown"
+        style="
+          display: none;
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: 100%;
+          z-index: 1000;
+          background: #fff;
+          border: 1px solid #ccc;
+          border-top: none;
+          list-style: none;
+          margin: 0;
+          padding: 0;
+          max-height: 150px;
+          overflow-y: auto;
+          width: 100%;
+          box-sizing: border-box;
+          text-align: left;
+          font-family: 'Comic Sans MS', 'Comic Sans', cursive;
+          font-size: 1.05rem;
+        "
+      ></ul>
+    </div>
 
     <button id="call-button">Call</button>
     <button id="hangup-button" disabled>Hang Up</button>
     <button id="hold-button" disabled>Hold</button>
+    <button id="hold-conf-button" disabled>Hold Conf</button>
+    <button id="unhold-button" disabled>Unhold</button>
 
+    <div id="participants-section" style="margin-top:2rem; display:none;">
+      <h2>Conference Participants</h2>
+      <ul id="participants-list" style="list-style:none; padding:0;"></ul>
+    </div>
     <div id="log"></div>
 
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="https://sdk.twilio.com/js/client/v1.13/twilio.min.js"></script>
     <script>
-      // Extract identity from query string (e.g., ?identity=alice)
-      const urlParams = new URLSearchParams(window.location.search);
-      const identity = urlParams.get("identity") || "anonymous";
-      document.getElementById("identity-label").textContent = `Identity: ${identity}`;
-
-      const socket = io();
+      const socket = io(); // Connect to Flask-SocketIO
       const logEl = document.getElementById("log");
       const callButton = document.getElementById("call-button");
       const hangupButton = document.getElementById("hangup-button");
       const holdButton = document.getElementById("hold-button");
+      const holdConfButton = document.getElementById("hold-conf-button");
+      const unholdButton = document.getElementById("unhold-button");
       const phoneInput = document.getElementById("phoneNumber");
 
       let device = null;
       let connection = null;
-      let childCallSid = null;
-      let parentCallSid = null; // will be set when we detect our own parent call
-      const relatedCallSids = new Set(); // Track call SIDs that belong to this dialer so we can show every subsequent event
+      let childCallSid = null; // Will be filled when backend emits the child SID
+      let parentCallSid = null; // Will be filled alongside the child SID
+      let onHold = false; // Track hold state
+      let myIdentity = null; // client identity
+      let currentConferenceName = null;
+      let myCallSid = null;
+      let participantsInterval = null;
 
       const appendLog = (msg, type = null) => {
         const time = new Date().toLocaleTimeString();
         const div = document.createElement("div");
+
         div.textContent = `${time} — ${msg}`;
+
         if (type === "parent") {
           div.classList.add("log-parent");
         } else if (type === "child") {
           div.classList.add("log-child");
+        } else if (type === "conference") {
+          div.classList.add("log-conference");
         }
+
         logEl.appendChild(div);
       };
 
       async function initDialer() {
         try {
           appendLog("🔑 Fetching Twilio token...");
-          const res = await fetch(`/token?identity=${encodeURIComponent(identity)}`);
+          const res = await fetch("/token");
           const data = await res.json();
           const token = data.token;
+          myIdentity = data.identity || "browser";
 
           appendLog("⚙️ Initializing Twilio.Device...");
           device = new Twilio.Device(token, { debug: false });
 
           device.on("ready", () => appendLog("✅ Dialer ready."));
-          device.on("error", (err) => appendLog(`❌ Dialer error: ${err.message}`));
+          device.on("error", (err) =>
+            appendLog(`❌ Dialer error: ${err.message}`)
+          );
           device.on("connect", (conn) => {
             appendLog("📞 Call connected.");
             connection = conn;
+            onHold = false;
             hangupButton.disabled = false;
             callButton.disabled = true;
             holdButton.disabled = true;
+            holdConfButton.disabled = true;
+            unholdButton.disabled = true;
+
+            // Capture Parent Call SID once the media session is established
+            conn.on("accept", () => {
+              if (conn.parameters && conn.parameters.CallSid) {
+                parentCallSid = conn.parameters.CallSid;
+                appendLog(
+                  `📌 Parent Call SID captured (accept): ${parentCallSid}`,
+                  "parent"
+                );
+              }
+            });
           });
           device.on("disconnect", () => {
             appendLog("📴 Call ended.");
             connection = null;
-            hangupButton.disabled = true;
-            callButton.disabled = false;
-            holdButton.disabled = true;
             childCallSid = null;
-            parentCallSid = null;
+            resetCallUI();
           });
           device.on("incoming", (conn) => {
             appendLog("📥 Incoming call received.");
@@ -167,24 +233,75 @@
           return;
         }
 
-        appendLog(`📲 Calling ${phoneNumber}...`);
+        // Find name for the number
+        let displayName = null;
+        for (const entry of phoneNumbers) {
+          if (entry.number === phoneNumber) {
+            displayName = entry.name;
+            break;
+          }
+        }
+        const namePart = displayName ? ` (${displayName})` : "";
+
+        appendLog(`📲 Calling ${phoneNumber}${namePart}...`);
         connection = device.connect({ To: phoneNumber });
+
+        // Attach listener before any events might fire to capture CallSid reliably
+        if (connection) {
+          connection.on("accept", () => {
+            if (connection.parameters && connection.parameters.CallSid) {
+              parentCallSid = connection.parameters.CallSid;
+              appendLog(
+                `📌 Parent Call SID captured (accept): ${parentCallSid}`,
+                "parent"
+              );
+            }
+          });
+        }
       });
 
       hangupButton.addEventListener("click", () => {
         if (connection) {
           appendLog("🔴 Hanging up...");
+          onHold = false; // reset hold state so disconnect handler restores UI
           connection.disconnect();
         }
+        showParticipantsSection(false);
+        stopParticipantsPolling();
+        resetCallUI();
       });
 
       holdButton.addEventListener("click", () => {
-        if (!childCallSid) {
-          appendLog("⚠️ Child Call SID not yet available.");
+        if (!childCallSid || !parentCallSid) {
+          appendLog("⚠️ Child or Parent Call SID not yet available.");
           return;
         }
-        appendLog("⏸️ Placing child call on hold...");
-        holdCall(childCallSid);
+        appendLog("⏸️ Placing child and parent calls on hold...");
+        onHold = true; // set early so disconnect handler knows
+        callButton.disabled = true;
+        const target = `client:${myIdentity}`;
+        holdCall(childCallSid, parentCallSid, target);
+      });
+
+      holdConfButton.addEventListener("click", () => {
+        if (!childCallSid || !parentCallSid) {
+          appendLog("⚠️ Child or Parent Call SID not yet available.");
+          return;
+        }
+        appendLog("⏸️ Placing calls into conference hold...");
+        onHold = true;
+        callButton.disabled = true;
+        const target = `client:${myIdentity}`;
+        holdCallViaConference(childCallSid, parentCallSid, target);
+      });
+
+      unholdButton.addEventListener("click", () => {
+        if (!parentCallSid) {
+          appendLog("⚠️ Parent Call SID not yet available.");
+          return;
+        }
+        appendLog("▶️ Attempting to unhold the call...");
+        unholdCall(parentCallSid);
       });
 
       socket.on("call_event", (event) => {
@@ -198,34 +315,6 @@
           parent_sid,
           event: eventType,
         } = event;
-
-        // Determine if this event belongs to *this* dialer instance --------------------------------
-        const identityTag = `client:${identity}`; // Twilio uses the pattern client:<identity>
-        const fromMatchesIdentity = from && from.includes(identityTag);
-        const toMatchesIdentity = to && to.includes(identityTag);
-
-        // A call is related if (a) either leg contains our identity OR (b) we have previously marked
-        // the SID (or its parent) as belonging to this dialer.
-        const isRelated =
-          fromMatchesIdentity ||
-          toMatchesIdentity ||
-          relatedCallSids.has(sid) ||
-          (parent_sid && relatedCallSids.has(parent_sid));
-
-        if (!isRelated) {
-          return; // Ignore unrelated events to keep the console clean
-        }
-
-        // Remember these SIDs for subsequent correlation
-        relatedCallSids.add(sid);
-        if (parent_sid) relatedCallSids.add(parent_sid);
-
-        // Capture the parent call SID once we have identified it as ours
-        if (type === "parent" && !parentCallSid) {
-          parentCallSid = sid;
-        }
-
-        // -------------------------------------------------------------------------------------------
 
         if (eventType === "ring_duration") {
           appendLog(`🛎️ ${type.toUpperCase()} call rang for: ${note}`);
@@ -247,50 +336,349 @@
 
         appendLog(logMessage, type);
 
+        // ✅ Enable Hold only when the CHILD call is actually answered (i.e., reaches IN-PROGRESS)
         if (
           type === "child" &&
           (status === "in-progress" || status === "answered")
         ) {
-          holdButton.disabled = false;
+          if (!onHold) holdButton.disabled = false;
+          if (!onHold) holdConfButton.disabled = false;
+          unholdButton.disabled = true;
         }
 
+        // 🛑 Ensure Hold is disabled as soon as the PARENT call is connected
         if (
           type === "parent" &&
           (status === "in-progress" || status === "answered")
         ) {
           holdButton.disabled = true;
+          holdConfButton.disabled = true;
+          unholdButton.disabled = true;
+        }
+
+        // Capture Parent Call SID from any parent call event if not already set
+        if (type === "parent" && !parentCallSid) {
+          parentCallSid = sid;
+          appendLog(`📌 Parent Call SID captured: ${parentCallSid}`, "parent");
         }
       });
 
       socket.on("child_call_sid", (data) => {
-        // Always track these SIDs so future events are captured
-        relatedCallSids.add(data.child_sid);
-        relatedCallSids.add(data.parent_sid);
-
-        // Capture child SID as soon as we can. If parent SID is not yet known,
-        // store it tentatively; we'll still overwrite once parent SID aligns.
-        if (!childCallSid && (!parentCallSid || data.parent_sid === parentCallSid)) {
-          childCallSid = data.child_sid;
-          appendLog(`🔗 Child Call SID received: ${childCallSid}`, "child");
-        }
+        console.log("childCallSid", data);
+        childCallSid = data.child_sid;
+        parentCallSid = data.parent_sid;
+        appendLog(`🔗 Child Call SID received: ${childCallSid}`, "child");
+        // ⚠️ Do NOT enable Hold yet; wait until the child call is answered
       });
 
-      function holdCall(childCallSid) {
+      socket.on("parent_call_sid", (data) => {
+        parentCallSid = data.parent_sid;
+        console.log("parentCallSid", parentCallSid);
+        appendLog(`🔗 Parent Call SID received: ${parentCallSid}`, "parent");
+      });
+
+      socket.on("conference_event", (event) => {
+        const {
+          event: evtType,
+          conference_sid,
+          participant_sid,
+          call_sid,
+          status,
+          note,
+          participant_label,
+          coaching,
+          end_conference_on_exit,
+          start_conference_on_enter,
+          hold,
+          muted,
+          reason,
+          sequence_number,
+        } = event;
+
+        let msg = `(${sequence_number}) [${
+          participant_label ?? "CONFERENCE"
+        }] Event: ${evtType || status || "unknown"}`;
+        if (conference_sid) msg += ` | Conf SID: ${conference_sid}`;
+        if (participant_sid) msg += ` | Participant SID: ${participant_sid}`;
+        if (call_sid) msg += ` | Call SID: ${call_sid}`;
+        if (note) msg += ` | Note: ${note}`;
+        if (coaching) msg += ` | Coaching: ${coaching}`;
+        if (end_conference_on_exit)
+          msg += ` | End Conference On Exit: ${end_conference_on_exit}`;
+        if (start_conference_on_enter)
+          msg += ` | Start Conference On Enter: ${start_conference_on_enter}`;
+        if (hold) msg += ` | Hold: ${hold}`;
+        if (muted) msg += ` | Muted: ${muted}`;
+        if (reason) msg += ` | Reason: ${reason}`;
+
+        appendLog(msg, "conference");
+
+        // Try to detect when we join a conference and set conference name/call sid
+        if (event.event === 'participant-join') {
+          currentConferenceName = event.conference_name;
+          myCallSid = event.call_sid; // This will be set for the joining participant
+          showParticipantsSection(true);
+          fetchAndRenderParticipants();
+          startParticipantsPolling();
+        }
+        if (event.event === 'participant-leave' && event.call_sid === myCallSid) {
+          // We left the conference
+          showParticipantsSection(false);
+          stopParticipantsPolling();
+          resetCallUI();
+        }
+        if (event.event === 'conference-end') {
+          showParticipantsSection(false);
+          stopParticipantsPolling();
+          resetAllState();
+          resetCallUI();
+        }
+        // Always fetch and re-render participants after any conference event
+        fetchAndRenderParticipants();
+      });
+
+      function holdCall(childCallSid, parentCallSid, parentTarget) {
+        const payload = {
+          child_call_sid: childCallSid,
+          parent_call_sid: parentCallSid,
+          parent_target: parentTarget,
+          parent_name: "sachinists",
+        };
+        console.debug("Sending hold-call payload", payload);
         fetch("/hold-call", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ child_call_sid: childCallSid }),
+          body: JSON.stringify(payload),
         })
           .then((res) => res.json())
           .then((data) => {
             appendLog(`ℹ️ Hold response: ${JSON.stringify(data)}`);
+            onHold = true;
+            holdButton.disabled = true;
+            holdConfButton.disabled = true;
+            unholdButton.disabled = false;
+            hangupButton.disabled = true;
           })
           .catch((err) => {
             appendLog(`❌ Hold request error: ${err.message}`);
           });
       }
 
+      function holdCallViaConference(
+        childCallSid,
+        parentCallSid,
+        parentTarget
+      ) {
+        const payload = {
+          child_call_sid: childCallSid,
+          parent_call_sid: parentCallSid,
+          parent_target: parentTarget,
+          child_name: "sachinists",
+          parent_name: "debjyoti",
+        };
+        console.debug("Sending hold-call-via-conference payload", payload);
+        fetch("/hold-call-via-conference", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            appendLog(
+              `ℹ️ Hold via conference response: ${JSON.stringify(data)}`
+            );
+            onHold = true;
+            holdConfButton.disabled = true;
+            holdButton.disabled = true;
+            unholdButton.disabled = true; // No unhold for conf hold
+            hangupButton.disabled = false; // Allow disconnect
+          })
+          .catch((err) => {
+            appendLog(`❌ Hold via conference request error: ${err.message}`);
+          });
+      }
+
+      function unholdCall(parentCallSid) {
+        const payload = { parent_call_sid: parentCallSid };
+        console.debug("Sending unhold-call payload", payload);
+        fetch("/unhold-call", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            appendLog(`ℹ️ Unhold response: ${JSON.stringify(data)}`);
+            // Wait for incoming reconnect; disable unhold to prevent double click
+            unholdButton.disabled = true;
+          })
+          .catch((err) => {
+            appendLog(`❌ Unhold request error: ${err.message}`);
+          });
+      }
+
+      // Custom dropdown logic (no Bootstrap)
+      const customDropdown = document.getElementById("customDropdown");
+      const phoneNumbers = [
+        {
+          name: "Second In JustCall",
+          number: "+13614705746",
+        },
+        {
+          name: "Third In JustCall",
+          number: "+19037760728",
+        },
+        {
+          name: "Personal Jio",
+          number: "+918617020252",
+        },
+        {
+          name: "New Dialer",
+          number: "client:debjyoti-dialer-app",
+        },
+      ];
+
+      // "+13614705746", "+19037760728", "+918617020252"
+      function renderDropdown() {
+        customDropdown.innerHTML = "";
+        phoneNumbers.forEach((entry) => {
+          const li = document.createElement("li");
+          li.textContent = `${entry.name}: ${entry.number}`;
+          li.style.padding = "0.5rem 1rem";
+          li.style.cursor = "pointer";
+          li.style.textAlign = "left";
+          li.style.fontFamily = "'Comic Sans MS', 'Comic Sans', cursive";
+          li.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            phoneInput.value = entry.number;
+            customDropdown.style.display = "none";
+          });
+          li.addEventListener("mouseover", () => {
+            li.style.background = "#f0f0f0";
+          });
+          li.addEventListener("mouseout", () => {
+            li.style.background = "#fff";
+          });
+          customDropdown.appendChild(li);
+        });
+        customDropdown.style.display = "block";
+      }
+
+      phoneInput.addEventListener("focus", () => {
+        renderDropdown();
+      });
+      phoneInput.addEventListener("input", () => {
+        renderDropdown();
+      });
+      phoneInput.addEventListener("blur", () => {
+        setTimeout(() => (customDropdown.style.display = "none"), 200);
+      });
+
+      // --- PARTICIPANT UI LOGIC ---
+      function showParticipantsSection(show) {
+        document.getElementById('participants-section').style.display = show ? '' : 'none';
+      }
+
+      async function fetchAndRenderParticipants() {
+        if (!currentConferenceName || !myCallSid) return;
+        try {
+          const res = await fetch(`/conference/${encodeURIComponent(currentConferenceName)}/participants?call_sid=${myCallSid}`);
+          const participants = await res.json();
+          // Debug: print the full participants array to the log
+          appendLog('[DEBUG] Participants: ' + JSON.stringify(participants));
+          const list = document.getElementById('participants-list');
+          list.innerHTML = '';
+          participants.forEach(p => {
+            const li = document.createElement('li');
+            li.style.marginBottom = '0.5rem';
+            let label = `${p.participant_label} (${p.role}) [On Hold: ${p.on_hold ? 'Yes' : 'No'}${p.on_hold ? '' : `, Muted: ${p.muted ? 'Yes' : 'No'}`}]`;
+            if (p.call_sid === myCallSid) label += ' (You)';
+            li.textContent = label;
+            // Only allow controls for others, never for self
+            if (p.call_sid !== myCallSid) {
+              // Mute/unmute button
+              const muteBtn = document.createElement('button');
+              muteBtn.textContent = p.muted ? 'Unmute' : 'Mute';
+              muteBtn.style.marginLeft = '0.5rem';
+              muteBtn.onclick = async () => {
+                await fetch('/conference/mute', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ conference_name: currentConferenceName, call_sid: p.call_sid, mute: !p.muted })
+                });
+                fetchAndRenderParticipants();
+              };
+              li.appendChild(muteBtn);
+              // Hold/unhold button
+              const holdBtn = document.createElement('button');
+              holdBtn.textContent = p.on_hold ? 'Unhold' : 'Hold';
+              holdBtn.style.marginLeft = '0.5rem';
+              holdBtn.onclick = async () => {
+                await fetch('/conference/hold', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ conference_name: currentConferenceName, call_sid: p.call_sid, hold: !p.on_hold })
+                });
+                fetchAndRenderParticipants();
+              };
+              li.appendChild(holdBtn);
+              // Kick button (never allow self-kick)
+              const kickBtn = document.createElement('button');
+              kickBtn.textContent = 'Kick';
+              kickBtn.style.marginLeft = '0.5rem';
+              kickBtn.onclick = async () => {
+                await fetch('/conference/kick', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ conference_name: currentConferenceName, call_sid: p.call_sid })
+                });
+                fetchAndRenderParticipants();
+              };
+              li.appendChild(kickBtn);
+            } else {
+              // For self, show disabled buttons for UI consistency
+              ['Mute', 'Hold', 'Kick'].forEach(txt => {
+                const btn = document.createElement('button');
+                btn.textContent = txt;
+                btn.disabled = true;
+                btn.style.marginLeft = '0.5rem';
+                li.appendChild(btn);
+              });
+            }
+            list.appendChild(li);
+          });
+        } catch (e) {
+          // Optionally log error
+        }
+      }
+
+      function startParticipantsPolling() {
+        if (participantsInterval) clearInterval(participantsInterval);
+        participantsInterval = setInterval(fetchAndRenderParticipants, 5000);
+      }
+      function stopParticipantsPolling() {
+        if (participantsInterval) clearInterval(participantsInterval);
+        participantsInterval = null;
+      }
+
+      function resetCallUI() {
+        callButton.disabled = false;
+        hangupButton.disabled = true;
+        holdButton.disabled = true;
+        holdConfButton.disabled = true;
+        unholdButton.disabled = true;
+      }
+
+      function resetAllState() {
+        connection = null;
+        childCallSid = null;
+        parentCallSid = null;
+        onHold = false;
+        currentConferenceName = null;
+        myCallSid = null;
+      }
+
       initDialer();
     </script>
   </body>
-</html> 
+</html>

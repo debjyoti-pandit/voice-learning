@@ -9,6 +9,6 @@ def index():
     return render_template('index.html')
 
 
-@templates_bp.route('/dialer')
+@templates_bp.route('/second-dialer')
 def dialer():
     return render_template('dialer.html') 

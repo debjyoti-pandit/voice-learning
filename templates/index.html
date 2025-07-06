@@ -89,7 +89,7 @@
         id="phoneNumber"
         type="tel"
         placeholder="+14155551234"
-        value="+13614705746"
+        value="+918617020252"
         autocomplete="off"
         style="width: 100%; box-sizing: border-box"
       />
@@ -210,15 +210,7 @@
             appendLog("📴 Call ended.");
             connection = null;
             childCallSid = null;
-
-            if (!onHold) {
-              // Normal hangup
-              hangupButton.disabled = true;
-              callButton.disabled = false;
-              holdButton.disabled = true;
-              holdConfButton.disabled = true;
-              unholdButton.disabled = true;
-            }
+            resetCallUI();
           });
           device.on("incoming", (conn) => {
             appendLog("📥 Incoming call received.");
@@ -276,6 +268,7 @@
         }
         showParticipantsSection(false);
         stopParticipantsPolling();
+        resetCallUI();
       });
 
       holdButton.addEventListener("click", () => {
@@ -432,6 +425,13 @@
           // We left the conference
           showParticipantsSection(false);
           stopParticipantsPolling();
+          resetCallUI();
+        }
+        if (event.event === 'conference-end') {
+          showParticipantsSection(false);
+          stopParticipantsPolling();
+          resetAllState();
+          resetCallUI();
         }
         // Always fetch and re-render participants after any conference event
         fetchAndRenderParticipants();
@@ -531,6 +531,10 @@
         {
           name: "Personal Jio",
           number: "+918617020252",
+        },
+        {
+          name: "New Dialer",
+          number: "client:debjyoti-dialer-app",
         },
       ];
 
@@ -655,6 +659,23 @@
       function stopParticipantsPolling() {
         if (participantsInterval) clearInterval(participantsInterval);
         participantsInterval = null;
+      }
+
+      function resetCallUI() {
+        callButton.disabled = false;
+        hangupButton.disabled = true;
+        holdButton.disabled = true;
+        holdConfButton.disabled = true;
+        unholdButton.disabled = true;
+      }
+
+      function resetAllState() {
+        connection = null;
+        childCallSid = null;
+        parentCallSid = null;
+        onHold = false;
+        currentConferenceName = null;
+        myCallSid = null;
       }
 
       initDialer();
