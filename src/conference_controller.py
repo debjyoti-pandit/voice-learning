@@ -28,13 +28,22 @@ def get_value(obj, key):
 @conference_bp.route('/join_conference', methods=['POST', 'GET'])
 def join_conference():
     conference_name = request.args.get('conference_name', 'DefaultRoom')
+    caller_identity = request.args.get('identity', None)
     start_conference_on_enter = str2bool(request.args.get('start_conference_on_enter'), True)
     end_conference_on_exit = str2bool(request.args.get('end_conference_on_exit'), True)
     muted = str2bool(request.args.get('mute'), False)
     participant_label = request.args.get('participant_label', 'DefaultParticipant')
-    role = request.args.get('role', None)
+    
 
     response = VoiceResponse()
+
+    def sc_url():
+        base = url_for('conference.conference_events', _external=True)
+        if caller_identity:
+            return f"{base}?identity={caller_identity}"
+        return base
+    print(sc_url())
+
     dial = response.dial(record='record-from-answer-dual')                            
     dial.conference(
         conference_name,
@@ -44,7 +53,7 @@ def join_conference():
         end_conference_on_exit=end_conference_on_exit,
         muted=muted,
         participant_label=participant_label,
-        status_callback=url_for('conference.conference_events', _external=True),
+        status_callback=sc_url(),
         status_callback_method='POST',
         status_callback_event='start end join leave hold mute'
     )
@@ -62,11 +71,29 @@ def conference_events():
 def connect_to_conference():
     conference_name = request.args.get('conference_name', 'DefaultRoom')
     response = VoiceResponse()
+
+    caller_identity = None
+    from_header = request.values.get('From') or ''
+    to_header = request.values.get('To') or ''
+    if from_header.startswith('client:'):
+        caller_identity = from_header[len('client:'):]
+    elif to_header.startswith('client:'):
+        caller_identity = to_header[len('client:'):]
+
+    def sc_url():
+        base = url_for('conference.conference_events', _external=True)
+        if caller_identity:
+            return f"{base}?identity={caller_identity}"
+        return base
+
     dial = response.dial()
     dial.conference(
         conference_name,
         start_conference_on_enter=True,
         end_conference_on_exit=True,
+        status_callback=sc_url(),
+        status_callback_method='POST',
+        status_callback_event='start end join leave hold mute'
     )
     return xml_response(response)
 

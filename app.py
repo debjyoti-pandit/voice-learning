@@ -1,5 +1,5 @@
-from flask import Flask
-from flask_socketio import SocketIO
+from flask import Flask, request
+from flask_socketio import SocketIO, join_room, leave_room
 from dotenv import load_dotenv
 from src.templates_controller import templates_bp                  
 from src.auth_controller import auth_bp                         
@@ -10,6 +10,7 @@ from src.conference_controller import conference_bp
 from src.hold_controller import hold_bp
 import os
 from twilio.rest import Client
+import logging
 
 load_dotenv()
 
@@ -18,6 +19,8 @@ load_dotenv()
                                                                              
 
 app = Flask(__name__)
+# Ensure we capture INFO logs regardless of debug mode
+app.logger.setLevel(logging.INFO)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
                                                                              
@@ -52,6 +55,26 @@ app.register_blueprint(voice_bp)
 app.register_blueprint(events_bp)
 app.register_blueprint(conference_bp)
 app.register_blueprint(hold_bp)
+
+# Register Socket.IO event handlers for identity-based rooms
+@socketio.on('connect')
+def handle_socket_connect():
+    """Add the connecting client to a room matching its identity (if provided)."""
+    identity = request.args.get('identity')
+    if identity:
+        join_room(identity)
+        app.logger.info(f"🔌 Client connected and joined room: {identity}")
+    else:
+        app.logger.info("🔌 Client connected without identity")
+
+@socketio.on('disconnect')
+def handle_socket_disconnect():
+    """Log disconnections; the Socket.IO server automatically removes rooms."""
+    identity = request.args.get('identity')
+    if identity:
+        app.logger.info(f"🔌 Client with identity '{identity}' disconnected")
+    else:
+        app.logger.info("🔌 Client disconnected without identity")
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5678, debug=False)

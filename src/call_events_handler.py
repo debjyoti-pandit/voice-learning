@@ -12,6 +12,29 @@ class CallEventsHandler:
 
     def handle(self, flask_request):
         """Process the incoming Flask request and emit events."""
+        # Determine the identity of the browser/client that should receive the Socket.IO
+        # events for this webhook call. Twilio will include the "identity" query param in
+        # callbacks when it was part of the original `status_callback` URL. However, for
+        # some call legs (notably the **parent** leg between the browser and Twilio)
+        # that parameter is absent which previously caused `identity` to be `None` and
+        # the subsequent `socketio.emit(..., room=identity)` broadcasts to **all**
+        # connected clients.  To avoid leaking events between different identities we
+        # now fall back to deriving the identity from the `From` / `To` headers when
+        # possible.
+        identity = flask_request.args.get('identity') or flask_request.values.get('identity')
+
+        # Fallback: infer identity from Twilio "client:" addresses if not explicitly
+        # provided.  We purposely strip the "client:" prefix so that it matches the
+        # room name used by the front-end when initialising the Socket.IO connection.
+        if not identity:
+            from_header = flask_request.values.get('From', '')
+            to_header = flask_request.values.get('To', '')
+
+            if from_header.startswith('client:'):
+                identity = from_header[len('client:'):]
+            elif to_header.startswith('client:'):
+                identity = to_header[len('client:'):]
+
         sid = flask_request.values.get('CallSid')
         parent_sid = flask_request.values.get('ParentCallSid')
         status = flask_request.values.get('CallStatus')
@@ -22,7 +45,7 @@ class CallEventsHandler:
 
         call_type = 'child' if parent_sid else 'parent'
 
-        self._emit_parent_child_sids(call_type, sid, parent_sid)
+        self._emit_parent_child_sids(call_type, sid, parent_sid, identity)
 
         log_key = self._ensure_log_entry(sid, parent_sid, call_type)
 
@@ -44,10 +67,10 @@ class CallEventsHandler:
             self.call_log[log_key]['end_time'] = timestamp
 
                             
-        self._emit_status_event(call_type, sid, parent_sid, status, from_number, to_number, timestamp, duration)
+        self._emit_status_event(call_type, sid, parent_sid, status, from_number, to_number, timestamp, duration, identity)
 
                                         
-        self._maybe_emit_ring_duration(log_key, call_type, sid, parent_sid, timestamp)
+        self._maybe_emit_ring_duration(log_key, call_type, sid, parent_sid, timestamp, identity)
 
         return '', 204
 
@@ -55,21 +78,21 @@ class CallEventsHandler:
                       
                                                                         
 
-    def _emit_parent_child_sids(self, call_type: str, sid: str, parent_sid: str | None):
+    def _emit_parent_child_sids(self, call_type: str, sid: str, parent_sid: str | None, identity: str | None):
                              
         if call_type == 'parent':
             if not self.call_log.get(sid, {}).get('parent_sid_emitted'):
-                self.socketio.emit("parent_call_sid", {"parent_sid": sid})
+                self.socketio.emit("parent_call_sid", {"parent_sid": sid}, room=identity)
                 self.call_log.setdefault(sid, {})['parent_sid_emitted'] = True
 
                             
         if call_type == 'child':
             if not self.call_log.get(parent_sid, {}).get('parent_sid_emitted'):
-                self.socketio.emit("parent_call_sid", {"parent_sid": parent_sid})
+                self.socketio.emit("parent_call_sid", {"parent_sid": parent_sid}, room=identity)
                 self.call_log.setdefault(parent_sid, {})['parent_sid_emitted'] = True
 
             if not self.call_log.get(sid, {}).get('child_sid_emitted'):
-                self.socketio.emit("child_call_sid", {"child_sid": sid, "parent_sid": parent_sid})
+                self.socketio.emit("child_call_sid", {"child_sid": sid, "parent_sid": parent_sid}, room=identity)
                 self.call_log.setdefault(sid, {})['child_sid_emitted'] = True
 
     def _ensure_log_entry(self, sid: str, parent_sid: str | None, call_type: str) -> str:
@@ -97,7 +120,7 @@ class CallEventsHandler:
             entry.setdefault('ring_duration_emitted', False)
         return log_key
 
-    def _emit_status_event(self, call_type, sid, parent_sid, status, from_number, to_number, timestamp, duration):
+    def _emit_status_event(self, call_type, sid, parent_sid, status, from_number, to_number, timestamp, duration, identity: str | None):
         event_data = {
             'sid': sid,
             'parent_sid': parent_sid,
@@ -125,9 +148,9 @@ class CallEventsHandler:
                 f"{call_type.capitalize()} call completed in {duration}s" if duration and int(duration) > 0 else f"{call_type.capitalize()} call completed (0s duration)"
             )
 
-        self.socketio.emit("call_event", event_data)
+        self.socketio.emit("call_event", event_data, room=identity)
 
-    def _maybe_emit_ring_duration(self, log_key, call_type, sid, parent_sid, timestamp):
+    def _maybe_emit_ring_duration(self, log_key, call_type, sid, parent_sid, timestamp, identity: str | None):
         entry = self.call_log[log_key]
         if (
             entry['ringing_time'] is not None and
@@ -143,5 +166,5 @@ class CallEventsHandler:
                 'note': f"{call_type.capitalize()} call rang for {ring_duration} seconds",
                 'event': 'ring_duration',
             }
-            self.socketio.emit("call_event", ring_data)
+            self.socketio.emit("call_event", ring_data, room=identity)
             entry['ring_duration_emitted'] = True

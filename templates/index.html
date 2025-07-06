@@ -134,7 +134,9 @@
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="https://sdk.twilio.com/js/client/v1.13/twilio.min.js"></script>
     <script>
-      const socket = io(); // Connect to Flask-SocketIO
+      // Use a fixed identity for all sessions
+      const myIdentity = "debjyoti-dialer-app";
+      const socket = io({ query: { identity: myIdentity } }); // Connect to Flask-SocketIO with identity
       const logEl = document.getElementById("log");
       const callButton = document.getElementById("call-button");
       const hangupButton = document.getElementById("hangup-button");
@@ -148,7 +150,6 @@
       let childCallSid = null; // Will be filled when backend emits the child SID
       let parentCallSid = null; // Will be filled alongside the child SID
       let onHold = false; // Track hold state
-      let myIdentity = null; // client identity
       let currentConferenceName = null;
       let myCallSid = null;
       let participantsInterval = null;
@@ -173,10 +174,10 @@
       async function initDialer() {
         try {
           appendLog("🔑 Fetching Twilio token...");
-          const res = await fetch("/token");
+          const res = await fetch(`/token?identity=${encodeURIComponent(myIdentity)}`);
           const data = await res.json();
           const token = data.token;
-          myIdentity = data.identity || "browser";
+          // myIdentity is a constant, no reassignment needed
 
           appendLog("⚙️ Initializing Twilio.Device...");
           device = new Twilio.Device(token, { debug: false });
@@ -474,7 +475,8 @@
           parent_call_sid: parentCallSid,
           parent_target: parentTarget,
           child_name: "sachinists",
-          parent_name: "debjyoti",
+          parent_name: myIdentity,
+          identity: myIdentity,
         };
         console.debug("Sending hold-call-via-conference payload", payload);
         fetch("/hold-call-via-conference", {

@@ -22,6 +22,10 @@ class ConferenceEventsHandler:
         """Process the incoming Flask request and emit a structured Socket.IO event."""
         values = flask_request.values
 
+        # Determine identity/room for scoped Socket.IO emission (mirrors CallEventsHandler logic)
+        identity = flask_request.args.get('identity') or flask_request.values.get('identity')
+        print(f"Identity: {identity}")
+
         event_type = values.get("StatusCallbackEvent")
         conference_sid = values.get("ConferenceSid")
         call_sid = values.get("CallSid")                                             
@@ -102,16 +106,16 @@ class ConferenceEventsHandler:
             "muted": muted,
         }
 
-                                                              
         event_data = {k: v for k, v in event_data.items() if v is not None}
 
-                                                     
-        self.socketio.emit("conference_event", event_data)
+        # Emit to the scoped room if identity is known, else broadcast (legacy behaviour)
+        if identity:
+            self.socketio.emit("conference_event", event_data, room=identity)
+        else:
+            self.socketio.emit("conference_event", event_data)
 
-                                               
         current_app.logger.info("📢 Conference event emitted: %s", event_data)
 
-                                                      
         return "", 204 
 
     def _put_participant_on_hold(self, client, conference_sid, call_sid, friendly_name, redis, url_for_func, app):

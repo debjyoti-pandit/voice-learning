@@ -134,6 +134,8 @@ def hold_call_via_conference():
     child_name = data.get('child_name')                                      
     parent_role = data.get('parent_role', 'agent')
     child_role = data.get('child_role', 'customer')
+    identity = data.get('identity')
+    print(f"Identity: {identity}")
 
     if not child_call_sid or not parent_call_sid:
         return jsonify({'error': 'Missing call SID(s)'}), 400
@@ -148,16 +150,12 @@ def hold_call_via_conference():
     recordings = {}
     try:
         recording = client.recordings.list(call_sid=parent_call_sid, limit=1)
-        print('parent recording')
-        print(recording)
         if recording:
             print(f"Stopping initial recording for parent call: {recording[0].sid}")
             recordings[parent_call_sid] = recording[0].sid
             client.recordings(recording[0].sid).update(status='stopped')
         else:
             recording = client.recordings.list(call_sid=child_call_sid, limit=1)
-            print('child recording')
-            print(recording)
             if recording:
                 print(f"Stopping initial recording for child call: {recording[0].sid}")
                 recordings[child_call_sid] = recording[0].sid
@@ -165,12 +163,11 @@ def hold_call_via_conference():
     except Exception as e:
         current_app.logger.warning(f"Could not access recordings to stop initial: {e}")
 
-    print('after fetching the recordings')
-    print(recordings)
     try:
         redis = current_app.config['redis']
         redis[conference_name] = {
-           "calls": {
+            "created_by": identity,
+            "calls": {
                parent_call_sid: {
                    "call_tag": parent_name,
                    "hold_on_conference_join": False,
@@ -183,11 +180,12 @@ def hold_call_via_conference():
                    "initial_call_recording_sid": get_value(recordings, child_call_sid),
                    "role": child_role,
                }
-           },
-           "participants": {}
+            },
+            "participants": {}
         }
+        print(f"url: {url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=child_name, start_conference_on_enter=False, end_conference_on_exit=True, role=child_role, identity=identity)}")
         client.calls(child_call_sid).update(
-            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=child_name, start_conference_on_enter=False, end_conference_on_exit=True, role=child_role),
+            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=child_name, start_conference_on_enter=False, end_conference_on_exit=True, role=child_role, identity=identity),
             method='POST',
         )
         print('after joining the child call to the conference')
@@ -199,7 +197,7 @@ def hold_call_via_conference():
             'role': child_role,
         }
         client.calls(parent_call_sid).update(
-            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=parent_name, start_conference_on_enter=True, end_conference_on_exit=False, mute=True, role=parent_role),
+            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=parent_name, start_conference_on_enter=True, end_conference_on_exit=False, mute=True, role=parent_role, identity=identity),
             method='POST',
         )
         print('after joining the parent call to the conference')

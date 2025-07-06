@@ -24,18 +24,29 @@ def voice():
             timeout=20,
             record='record-from-answer-dual'
         )
+        caller_identity = None
+        from_header = request.values.get('From') or ''
+        if from_header.startswith('client:'):
+            caller_identity = from_header[len('client:'):]
+
+        def sc_url():
+            base = url_for('events.call_events', _external=True)
+            if caller_identity:
+                return f"{base}?identity={caller_identity}"
+            return base
+
         if to_number.startswith('client:'):
             client_name = to_number[len('client:'):]
             dial.client(
                 client_name,
-                status_callback=url_for('events.call_events', _external=True),
+                status_callback=sc_url(),
                 status_callback_method='GET',
                 status_callback_event='initiated ringing answered completed',
             )
         else:
             dial.number(
                 to_number,
-                status_callback=url_for('events.call_events', _external=True),
+                status_callback=sc_url(),
                 status_callback_method='GET',
                 status_callback_event='initiated ringing answered completed',
             )
