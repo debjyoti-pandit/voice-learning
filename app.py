@@ -8,6 +8,7 @@ from src.voice_controller import voice_bp
 from src.call_events_controller import events_bp
 from src.conference_controller import conference_bp
 from src.hold_controller import hold_bp
+from src.transfer_controller import transfer_bp
 import os
 from twilio.rest import Client
 import logging
@@ -42,6 +43,7 @@ app.register_blueprint(voice_bp)
 app.register_blueprint(events_bp)
 app.register_blueprint(conference_bp)
 app.register_blueprint(hold_bp)
+app.register_blueprint(transfer_bp)
 
 # Track currently connected Socket.IO client identities so that the web dialer can
 # populate a dropdown with live targets.

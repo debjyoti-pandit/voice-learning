@@ -44,6 +44,10 @@
         background: #198754;
         color: #fff;
       }
+      #transfer-button {
+        background: #6f42c1;
+        color: #fff;
+      }
       button[disabled] {
         opacity: 0.5;
         cursor: not-allowed;
@@ -119,6 +123,7 @@
     <button id="hangup-button" disabled>Hang Up</button>
     <button id="hold-conf-button" disabled>Hold</button>
     <button id="unhold-button" disabled>Unhold</button>
+    <button id="transfer-button" disabled>Transfer</button>
 
     <div id="participants-section" style="margin-top: 2rem; display: none">
       <h2>Conference Participants</h2>
@@ -140,6 +145,7 @@
       const hangupButton = document.getElementById("hangup-button");
       const holdConfButton = document.getElementById("hold-conf-button");
       const unholdButton = document.getElementById("unhold-button");
+      const transferButton = document.getElementById("transfer-button");
       const phoneInput = document.getElementById("phoneNumber");
 
       let device = null;
@@ -197,6 +203,7 @@
             callButton.disabled = true;
             holdConfButton.disabled = true;
             unholdButton.disabled = true;
+            transferButton.disabled = true;
 
             // Capture Parent Call SID once the media session is established
             conn.on("accept", () => {
@@ -297,6 +304,16 @@
         unholdCall(parentCallSid);
       });
 
+      transferButton.addEventListener("click", () => {
+        if (!childCallSid || !parentCallSid) {
+          appendLog("⚠️ Child or Parent Call SID not yet available.");
+          return;
+        }
+        appendLog("🔀 Initiating warm transfer...");
+        const target = `client:${myIdentity}`;
+        warmTransfer(childCallSid, parentCallSid, target);
+      });
+
       socket.on("call_event", (event) => {
         const {
           status,
@@ -334,7 +351,8 @@
           type === "child" &&
           (status === "in-progress" || status === "answered")
         ) {
-          if (!onHold) holdConfButton.disabled = false;
+          if (!onHold && !currentConferenceName) holdConfButton.disabled = false;
+          if (!onHold && !currentConferenceName) transferButton.disabled = false;
           unholdButton.disabled = true;
         }
 
@@ -344,6 +362,7 @@
           (status === "in-progress" || status === "answered")
         ) {
           holdConfButton.disabled = true;
+          transferButton.disabled = true;
           unholdButton.disabled = true;
         }
 
@@ -470,6 +489,7 @@
             );
             onHold = true;
             holdConfButton.disabled = true;
+            transferButton.disabled = true;
             callButton.disabled = true;
             unholdButton.disabled = true; // No unhold for conf hold
             hangupButton.disabled = false; // Allow disconnect
@@ -495,6 +515,47 @@
           })
           .catch((err) => {
             appendLog(`❌ Unhold request error: ${err.message}`);
+          });
+      }
+
+      function warmTransfer(childCallSid, parentCallSid, parentTarget) {
+        const payload = {
+          child_call_sid: childCallSid,
+          parent_call_sid: parentCallSid,
+          parent_target: parentTarget,
+          identity: myIdentity,
+          child_name:
+            dialedTarget && dialedTarget.startsWith("client:")
+              ? dialedTarget.substring(7)
+              : "sachinists",
+          parent_name: myIdentity,
+          parent_role: "agent",
+          child_role:
+            dialedTarget && dialedTarget.startsWith("client:")
+              ? "agent"
+              : "customer",
+        };
+        appendLog(
+          `🔑 Sending warm-transfer payload for ${myIdentity} with payload: ${JSON.stringify(
+            payload
+          )}...`
+        );
+        fetch("/transfer/warm-transfer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            appendLog(`ℹ️ Warm transfer response: ${JSON.stringify(data)}`);
+            onHold = true;
+            holdConfButton.disabled = true;
+            transferButton.disabled = true;
+            callButton.disabled = true;
+            hangupButton.disabled = false;
+          })
+          .catch((err) => {
+            appendLog(`❌ Warm transfer request error: ${err.message}`);
           });
       }
 
@@ -719,6 +780,7 @@
         callButton.disabled = false;
         hangupButton.disabled = true;
         holdConfButton.disabled = true;
+        transferButton.disabled = true;
         unholdButton.disabled = true;
       }
 
