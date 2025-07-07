@@ -159,6 +159,9 @@
       let myRole = roleSelect.value;
       roleSelect.addEventListener("change", () => {
         myRole = roleSelect.value;
+
+        // Mark dropdown stale so it refreshes with role-specific visibility rules
+        customDropdown.dataset.dirty = "true";
       });
 
       let device = null;
@@ -704,7 +707,18 @@
       function renderDropdown() {
         customDropdown.innerHTML = "";
         phoneNumbers
-          .filter((entry) => entry.number !== `client:${myIdentity}`)
+          .filter((entry) => {
+            // Exclude our own identity from list
+            if (entry.number === `client:${myIdentity}`) return false;
+
+            // If the current role is customer, show ONLY the AIVA entry
+            if (myRole === "customer") {
+              return entry.name === "AIVA";
+            }
+
+            // For agents, show everything else
+            return true;
+          })
           .forEach((entry) => {
             const li = document.createElement("li");
             li.textContent = `${entry.name}: ${entry.number}`;
