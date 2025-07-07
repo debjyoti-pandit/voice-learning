@@ -79,6 +79,22 @@
         border-radius: 0.4rem;
         margin-bottom: 0.5rem;
       }
+      /* --- Incoming-call accept animation --- */
+      @keyframes jiggle {
+        0% {
+          transform: rotate(-2deg);
+        }
+        50% {
+          transform: rotate(2deg);
+        }
+        100% {
+          transform: rotate(-2deg);
+        }
+      }
+
+      .jiggle {
+        animation: jiggle 0.4s infinite;
+      }
     </style>
   </head>
   <body>
@@ -133,6 +149,17 @@
     <button id="unhold-button" disabled>Unhold</button>
     <button id="transfer-button" disabled>Transfer</button>
 
+    <!-- Shown only while an incoming call is ringing -->
+    <button id="accept-button" style="display: none">Accept</button>
+
+    <!-- Simple ringtone (looping) -->
+    <audio
+      id="ringtone"
+      src="https://actions.google.com/sounds/v1/alarms/phone_alerts_and_rings.wav"
+      preload="auto"
+      loop
+    ></audio>
+
     <div id="participants-section" style="margin-top: 2rem; display: none">
       <h2>Conference Participants</h2>
       <ul id="participants-list" style="list-style: none; padding: 0"></ul>
@@ -156,6 +183,8 @@
       const transferButton = document.getElementById("transfer-button");
       const phoneInput = document.getElementById("phoneNumber");
       const roleSelect = document.getElementById("roleToggle");
+      const acceptButton = document.getElementById("accept-button");
+      const ringtone = document.getElementById("ringtone");
       let myRole = roleSelect.value;
       roleSelect.addEventListener("change", () => {
         myRole = roleSelect.value;
@@ -173,6 +202,9 @@
       let myCallSid = null;
       let participantsInterval = null;
       let dialedTarget = null; // Last number/client dialed to infer roles
+
+      // Will hold an incoming (ringing) Twilio.Connection until accepted / rejected.
+      let incomingConnection = null;
 
       const appendLog = (msg, type = null) => {
         const time = new Date().toLocaleTimeString();
@@ -236,9 +268,18 @@
             appendLog("📴 Call ended.");
             connection = null;
             childCallSid = null;
+
+            // Ensure any ringtone / accept UI is cleared
+            ringtone.pause();
+            ringtone.currentTime = 0;
+            acceptButton.style.display = "none";
+            acceptButton.classList.remove("jiggle");
+            incomingConnection = null;
             resetCallUI();
           });
           device.on("incoming", (conn) => {
+            incomingConnection = conn;
+
             const fromParam = conn.parameters ? conn.parameters.From : null;
             if (fromParam && fromParam.startsWith("conference")) {
               appendLog("📥 Incoming CONFERENCE invite.");
@@ -248,7 +289,19 @@
                   (fromParam ? ` (From: ${fromParam})` : "")
               );
             }
-            conn.accept();
+
+            // UI: show Accept, start ringtone, disable other controls
+            acceptButton.style.display = "";
+            acceptButton.disabled = false;
+            acceptButton.classList.add("jiggle");
+            ringtone.currentTime = 0;
+            ringtone.play().catch(() => {});
+
+            callButton.disabled = true;
+            holdConfButton.disabled = true;
+            transferButton.disabled = true;
+            unholdButton.disabled = true;
+            hangupButton.disabled = false; // allow rejecting the call
           });
         } catch (err) {
           appendLog(`❌ Error initializing dialer: ${err.message}`);
@@ -301,6 +354,15 @@
           appendLog("🔴 Hanging up...");
           onHold = false; // reset hold state so disconnect handler restores UI
           connection.disconnect();
+        } else if (incomingConnection) {
+          // Reject the ringing call
+          appendLog("❌ Rejecting incoming call...");
+          incomingConnection.reject();
+          incomingConnection = null;
+          ringtone.pause();
+          ringtone.currentTime = 0;
+          acceptButton.style.display = "none";
+          acceptButton.classList.remove("jiggle");
         }
         showParticipantsSection(false);
         stopParticipantsPolling();
@@ -910,6 +972,10 @@
         holdConfButton.disabled = true;
         transferButton.disabled = true;
         unholdButton.disabled = true;
+
+        // Hide accept button and stop any jiggle effect
+        acceptButton.style.display = "none";
+        acceptButton.classList.remove("jiggle");
       }
 
       function resetAllState() {
@@ -920,6 +986,24 @@
         currentConferenceName = null;
         myCallSid = null;
       }
+
+      // Accept incoming ringing call
+      acceptButton.addEventListener("click", () => {
+        if (!incomingConnection) return;
+
+        appendLog("✅ Accepting incoming call...");
+
+        ringtone.pause();
+        ringtone.currentTime = 0;
+
+        acceptButton.disabled = true;
+        acceptButton.classList.remove("jiggle");
+        acceptButton.style.display = "none";
+
+        incomingConnection.accept();
+        connection = incomingConnection;
+        incomingConnection = null;
+      });
 
       initDialer();
     </script>
