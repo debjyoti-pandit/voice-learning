@@ -119,9 +119,9 @@
       ></ul>
     </div>
 
-    <div style="margin-top: 1rem;">
+    <div style="margin-top: 1rem">
       <label for="roleToggle">Role:</label>
-      <select id="roleToggle" style="padding: 0.5rem; font-size: 1rem;">
+      <select id="roleToggle" style="padding: 0.5rem; font-size: 1rem">
         <option value="agent">Agent</option>
         <option value="customer">Customer</option>
       </select>
@@ -243,7 +243,10 @@
             if (fromParam && fromParam.startsWith("conference")) {
               appendLog("📥 Incoming CONFERENCE invite.");
             } else {
-              appendLog("📥 Incoming call received." + (fromParam ? ` (From: ${fromParam})` : ""));
+              appendLog(
+                "📥 Incoming call received." +
+                  (fromParam ? ` (From: ${fromParam})` : "")
+              );
             }
             conn.accept();
           });
@@ -496,7 +499,8 @@
        *       - otherwise                             -> "customer"
        */
       function getChildRole(dialedTarget, parentRole) {
-        const isClientTarget = dialedTarget && dialedTarget.startsWith("client:");
+        const isClientTarget =
+          dialedTarget && dialedTarget.startsWith("client:");
         if (parentRole === "customer") {
           return isClientTarget ? "agent" : "ai-voice-agent";
         }
@@ -515,7 +519,8 @@
         if (parentRole === "customer") {
           return "aiva";
         }
-        const isClientTarget = dialedTarget && dialedTarget.startsWith("client:");
+        const isClientTarget =
+          dialedTarget && dialedTarget.startsWith("client:");
         return isClientTarget ? dialedTarget.substring(7) : "customer-name";
       }
 
@@ -765,26 +770,30 @@
       }
 
       async function fetchAndRenderParticipants() {
-        if (!currentConferenceName || !myCallSid) return;
+        if (!currentConferenceName) return;
         try {
-          const res = await fetch(
-            `/conference/${encodeURIComponent(
-              currentConferenceName
-            )}/participants?call_sid=${myCallSid}`
-          );
+          let url = `/conference/${encodeURIComponent(
+            currentConferenceName
+          )}/participants`;
+          if (myCallSid) {
+            url += `?call_sid=${myCallSid}`;
+          }
+          const res = await fetch(url);
           const participants = await res.json();
           const list = document.getElementById("participants-list");
           list.innerHTML = "";
           participants.forEach((p) => {
             const li = document.createElement("li");
             li.style.marginBottom = "0.5rem";
+            const isSelf =
+              p.call_sid === myCallSid || p.participant_label === myIdentity;
             let label = `${p.participant_label} (${p.role}) [On Hold: ${
               p.on_hold ? "Yes" : "No"
             }${p.on_hold ? "" : `, Muted: ${p.muted ? "Yes" : "No"}`}]`;
-            if (p.call_sid === myCallSid) label += " (You)";
+            if (isSelf) label += " (You)";
             li.textContent = label;
             // Only allow controls for others, never for self
-            if (p.call_sid !== myCallSid) {
+            if (!isSelf) {
               // Mute/unmute button for OTHER participants
               const muteBtn = document.createElement("button");
               muteBtn.textContent = p.muted ? "Unmute" : "Mute";

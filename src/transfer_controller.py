@@ -100,7 +100,7 @@ def warm_transfer():
         end_conference_on_exit[parent_call_sid] = True
         start_conference_on_enter[child_call_sid] = False
         end_conference_on_exit[child_call_sid] = False
-    if child_role == "agent":
+    elif parent_role == "agent":
         start_conference_on_enter[parent_call_sid] = False
         end_conference_on_exit[parent_call_sid] = False
         if child_role == "customer":
@@ -167,7 +167,7 @@ def warm_transfer():
         }
         print(f'after joining the child call to the conference: {conference_name}')
 
-        add_participant_to_conference(conference_name, transfer_to, identity)
+        add_participant_to_conference(conference_name, transfer_to, identity, role=parent_role)
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -175,7 +175,7 @@ def warm_transfer():
     return jsonify({'message': 'both legs in conference'}), 200
 
 
-def add_participant_to_conference(conference_name, phone_number, identity=None, start_conference_on_enter=True, end_conference_on_exit=False, mute=False, role="agent"):
+def add_participant_to_conference(conference_name, phone_number, identity=None, role="agent",start_conference_on_enter=True, end_conference_on_exit=False, mute=False):
     print(f"Adding participant to conference: {conference_name}, {phone_number}, {identity}")
     client = current_app.config['twilio_client']
 
@@ -231,7 +231,7 @@ def add_participant_to_conference(conference_name, phone_number, identity=None, 
         'muted': mute,
         'on_hold': False,
         'role': role,
-        "play_temporary_greeting": True,
+        "play_temporary_greeting": True if role == "customer" else False,
     }
 
     return call.sid
