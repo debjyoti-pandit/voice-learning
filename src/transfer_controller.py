@@ -110,6 +110,12 @@ def warm_transfer():
             start_conference_on_enter[child_call_sid] = False
             end_conference_on_exit[child_call_sid] = False
         
+    # initial_call_recording
+    try: # remove the streams 
+        client.calls(parent_call_sid).streams("initial_call_recording").update(status="stopped")
+        client.calls(child_call_sid).streams("initial_call_recording").update(status="stopped")
+    except Exception as e:
+        current_app.logger.warning(f"Could not stop stream to stop initial: {e}")
 
     try:
         redis = current_app.config['redis']

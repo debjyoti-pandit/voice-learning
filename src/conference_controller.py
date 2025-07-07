@@ -40,7 +40,9 @@ def join_conference():
         stream_url = f"wss://cowbird-above-globally.ngrok-free.app"
         start = Start()
         stream = Stream(url=stream_url, track='both_tracks', name=participant_label)
-        stream.parameter(name='participant_label', value=participant_label)
+        stream.parameter(name='call_flow_type', value="conference")
+        stream.parameter(name='track0_label', value="conference")
+        stream.parameter(name='track1_label', value=participant_label)
         start.append(stream)
         response.append(start)
         response.say('The stream has started.')

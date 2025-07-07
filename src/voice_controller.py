@@ -1,5 +1,5 @@
 from flask import Blueprint, request, url_for, current_app
-from twilio.twiml.voice_response import VoiceResponse
+from twilio.twiml.voice_response import VoiceResponse, Start, Stream
 from dotenv import load_dotenv
 import os
 from src.utils import xml_response
@@ -14,6 +14,16 @@ CALLER_ID = os.getenv('CALLER_ID')
 def voice():
     to_number = request.values.get('To')
     response = VoiceResponse()
+
+    stream_url = f"wss://cowbird-above-globally.ngrok-free.app"
+    start = Start()
+    stream = Stream(url=stream_url, track='both_tracks', name="initial_call_recording")
+    stream.parameter(name='call_flow_type', value="normal")
+    stream.parameter(name='track0_label', value="divyanshu_call_track_0")
+    stream.parameter(name='track1_label', value="aiva")
+    start.append(stream)
+    response.append(start)
+    response.say('The stream has started.')
 
     if to_number:
         dial = response.dial(
