@@ -20,7 +20,7 @@ def hold_call():
     data = request.get_json(silent=True)
     if data is None:
         return jsonify({'error': 'Invalid or missing JSON payload'}), 400
-    current_app.logger.info("📥 /hold-call payload: %s", data)
+    current_app.logger.info("🎶 hold_call invoked", extra={"payload": data})
 
     client = current_app.config['twilio_client']
     call_log = current_app.config['call_log']
@@ -108,6 +108,7 @@ def hold_call():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+    current_app.logger.info("🎶 hold_call processing complete")
     return jsonify({'message': 'Child placed on hold; both legs in conference'}), 200
 
 def get_value(obj, key):
@@ -121,20 +122,20 @@ def hold_call_via_conference():
     data = request.get_json(silent=True)
     if data is None:
         return jsonify({'error': 'Invalid or missing JSON payload'}), 400
-    current_app.logger.info("📥 /hold-call-via-conference payload: %s", data)
+    current_app.logger.info("🎶 hold_call_via_conference invoked", extra={"payload": data})
 
     client = current_app.config['twilio_client']
     child_call_sid = data.get('child_call_sid')
     parent_call_sid = data.get('parent_call_sid')
     parent_name = data.get('parent_name')
     child_name = data.get('child_name')
-    print(f"Parent name: {parent_name} and child name: {child_name}")
+    current_app.logger.debug("🎶 Initiated hold via conference: parent=%s child=%s", parent_name, child_name)
     parent_role = data.get('parent_role')
     child_role = data.get('child_role')
     identity = data.get('identity')
     if not parent_role or not child_role:
         return jsonify({'error': 'Missing role(s)'}), 400
-    print(f"Identity: {identity} and parent_role: {parent_role} and child_role: {child_role}")
+    current_app.logger.debug("🎶 Roles => identity=%s parent_role=%s child_role=%s", identity, parent_role, child_role)
 
     if not child_call_sid or not parent_call_sid:
         return jsonify({'error': 'Missing call SID(s)'}), 400
@@ -147,13 +148,13 @@ def hold_call_via_conference():
     try:
         recording = client.recordings.list(call_sid=parent_call_sid, limit=1)
         if recording:
-            print(f"Stopping initial recording for parent call: {recording[0].sid}")
+            current_app.logger.debug("🎶 Stopping initial recording for parent call: %s", recording[0].sid)
             recordings[parent_call_sid] = recording[0].sid
             client.recordings(recording[0].sid).update(status='stopped')
         else:
             recording = client.recordings.list(call_sid=child_call_sid, limit=1)
             if recording:
-                print(f"Stopping initial recording for child call: {recording[0].sid}")
+                current_app.logger.debug("🎶 Stopping initial recording for child call: %s", recording[0].sid)
                 recordings[child_call_sid] = recording[0].sid
                 client.recordings(recording[0].sid).update(status='stopped')
     except Exception as e:
@@ -183,7 +184,7 @@ def hold_call_via_conference():
             url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=child_name, start_conference_on_enter=False, end_conference_on_exit=True, role=child_role, identity=identity),
             method='POST',
         )
-        print('after joining the child call to the conference')
+        current_app.logger.debug("🎶 Child call %s joined conference %s", child_call_sid, conference_name)
         redis[conference_name]['participants'][child_call_sid] = {
             'participant_label': child_name,
             'call_sid': child_call_sid,
@@ -195,7 +196,7 @@ def hold_call_via_conference():
             url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=parent_name, start_conference_on_enter=True, end_conference_on_exit=False, mute=True, role=parent_role, identity=identity),
             method='POST',
         )
-        print('after joining the parent call to the conference')
+        current_app.logger.debug("🎶 Parent call %s joined conference %s", parent_call_sid, conference_name)
 
         redis[conference_name]['participants'][parent_call_sid] = {
             'participant_label': parent_name,
@@ -208,6 +209,7 @@ def hold_call_via_conference():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+    current_app.logger.info("🎶 hold_call_via_conference processing complete")
     return jsonify({'message': 'both legs in conference'}), 200
 
 @hold_bp.route('/unhold-call', methods=['POST'])

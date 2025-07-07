@@ -68,7 +68,7 @@ def hangup_call():
     """Terminate the current call leg."""
     redis = current_app.config['redis']
     call_id = request.values.get('CallSid')
-    print(f"call_id in hangup_call: {call_id}")
+    current_app.logger.info("📞 hangup_call invoked", extra={"params": request.values.to_dict()})
     if call_id in redis:
         redis_data = redis[call_id];
         if redis_data['child_call_moved_to_conference']:
@@ -83,6 +83,7 @@ def hangup_call():
             stream_audio = redis_data['stream_audio']
 
             client = current_app.config['twilio_client']
+            current_app.logger.debug("📞 Updating parent call %s to join conference %s", call_id, conference_name)
             client.calls(call_id).update(
                 url=url_for('conference.join_conference', _external=True, 
                             conference_name=conference_name, 
@@ -95,7 +96,7 @@ def hangup_call():
                             stream_audio=stream_audio),
                 method='POST',
             )
-            print('after joining the parent call to the conference')
+            current_app.logger.debug("📞 Parent call %s joined conference %s update completed", call_id, conference_name)
 
             redis[conference_name]['participants'][call_id] = {
                 'participant_label': participant_label,
@@ -108,9 +109,10 @@ def hangup_call():
             empty_resp = VoiceResponse()
             return xml_response(empty_resp)
         
-    print(f"there is no conference running so hanging up the call: {call_id}")
+    current_app.logger.debug("📞 No conference context for call %s; proceeding to hangup", call_id)
     resp = VoiceResponse()
     resp.hangup()
+    current_app.logger.info("📞 hangup_call processing complete")
     return xml_response(resp)
 
 @voice_bp.route('/answer', methods=['GET', 'POST'])
@@ -177,6 +179,7 @@ def update_call_url():
     """
     # Accept both JSON payloads and form/query parameters for flexibility.
     data = request.get_json(silent=True) or request.values
+    current_app.logger.info("🔄 update_call_url invoked", extra={"payload": data.to_dict() if hasattr(data, 'to_dict') else data})
 
     call_sid = data.get('call_sid') or request.args.get('call_sid')
     new_url = data.get('url') or request.args.get('url')
@@ -190,9 +193,11 @@ def update_call_url():
     client = current_app.config['twilio_client']
 
     try:
+        current_app.logger.debug("🔄 Calling Twilio API to update call %s", call_sid)
         client.calls(call_sid).update(url=new_url, method='POST')
-        current_app.logger.info(f"🔄 Updated call {call_sid} to fetch TwiML from {new_url}")
+        current_app.logger.debug("🔄 Twilio update completed for call %s", call_sid)
+        current_app.logger.info("🔄 update_call_url processing complete")
         return jsonify({'success': True, 'message': 'Call URL updated.'})
     except Exception as e:
-        current_app.logger.error(f"❌ Failed to update call {call_sid}: {e}")
+        current_app.logger.error("🔄 Failed to update call %s: %s", call_sid, e)
         return jsonify({'success': False, 'error': str(e)}), 500

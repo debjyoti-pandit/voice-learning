@@ -15,6 +15,45 @@ import logging
 
 load_dotenv()
 
+# --- Logging -----------------------------------------------------------------
+# Custom formatter that appends selected extra attributes only when they are present
+# and non-empty so that lines without extras stay clean.
+class OptionalExtraFormatter(logging.Formatter):
+    """Formatter that appends selected extra attributes only when they are present
+    and non-empty so that lines without extras stay clean.
+
+    Extra attributes we care about: ``params``, ``payload``, ``conference_name``.
+    """
+    def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
+        base = super().format(record)
+
+        extras: list[str] = []
+        for key in ("params", "payload", "conference_name"):
+            if not hasattr(record, key):
+                continue
+            value = getattr(record, key)
+            # Skip if value is falsy / empty ("", None, {}, [], etc.)
+            if value:
+                extras.append(f"{key}={value}")
+
+        if extras:
+            base = f"{base} {' '.join(extras)}"
+
+        return base
+
+# Remove any handlers that might have been added by previous basicConfig calls
+for h in logging.root.handlers[:]:
+    logging.root.removeHandler(h)
+
+_handler = logging.StreamHandler()
+_handler.setFormatter(OptionalExtraFormatter(
+    "%(asctime)s %(levelname)s [%(module)s] %(message)s"
+))
+logging.root.setLevel(logging.INFO)
+logging.root.addHandler(_handler)
+
+# --- End logging setup -------------------------------------------------------
+
 app = Flask(__name__)
 
 app.logger.setLevel(logging.INFO)

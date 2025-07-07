@@ -23,7 +23,7 @@ def warm_transfer():
     data = request.get_json(silent=True)
     if data is None:
         return jsonify({'error': 'Invalid or missing JSON payload'}), 400
-    current_app.logger.info("📥 /hold-call-via-conference payload: %s", data)
+    current_app.logger.info("🔀 warm_transfer invoked", extra={"payload": data})
 
     client = current_app.config['twilio_client']
     child_call_sid = data.get('child_call_sid')
@@ -36,7 +36,10 @@ def warm_transfer():
     transfer_to = data.get('transfer_to')
     if not parent_role or not child_role:
         return jsonify({'error': 'Missing role(s)'}), 400
-    print(f"Identity: {identity} and parent_role: {parent_role} and child_role: {child_role} and parent_name: {parent_name} and child_name: {child_name} and transfer_to: {transfer_to}")
+    current_app.logger.debug(
+        "🔀 Warm transfer details: identity=%s parent_role=%s child_role=%s parent_name=%s child_name=%s transfer_to=%s",
+        identity, parent_role, child_role, parent_name, child_name, transfer_to
+    )
     
       
 
@@ -51,13 +54,11 @@ def warm_transfer():
     # try:
     #     recording = client.recordings.list(call_sid=parent_call_sid, limit=1)
     #     if recording:
-    #         print(f"Stopping initial recording for parent call: {recording[0].sid}")
     #         recordings[parent_call_sid] = recording[0].sid
     #         client.recordings(recording[0].sid).update(status='stopped')
     #     else:
     #         recording = client.recordings.list(call_sid=child_call_sid, limit=1)
     #         if recording:
-    #             print(f"Stopping initial recording for child call: {recording[0].sid}")
     #             recordings[child_call_sid] = recording[0].sid
     #             client.recordings(recording[0].sid).update(status='stopped')
     # except Exception as e:
@@ -79,7 +80,7 @@ def warm_transfer():
             hold_on_conference_join[child_call_sid] = True
         else:
             hold_on_conference_join[child_call_sid] = False
-    print(f"Hold on conference join: {hold_on_conference_join}")
+    current_app.logger.debug("🔀 Hold-on-join configuration: %s", hold_on_conference_join)
 
     mute_on_conference_join = {
         parent_call_sid: False,
@@ -165,23 +166,25 @@ def warm_transfer():
             'on_hold': hold_on_conference_join[child_call_sid],
             'role': child_role,
         }
-        print(f'after joining the child call to the conference: {conference_name}')
+        current_app.logger.debug("🔀 Child call %s joined conference %s", child_call_sid, conference_name)
 
         add_participant_to_conference(conference_name, transfer_to, identity, role=parent_role)
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+    current_app.logger.info("🔀 warm_transfer processing complete")
     return jsonify({'message': 'both legs in conference'}), 200
 
 
 def add_participant_to_conference(conference_name, phone_number, identity=None, role="agent",start_conference_on_enter=True, end_conference_on_exit=False, mute=False):
-    print(f"Adding participant to conference: {conference_name}, {phone_number}, {identity}")
+    current_app.logger.debug("🔀 Adding participant to conference %s: phone=%s identity=%s", conference_name, phone_number, identity)
     client = current_app.config['twilio_client']
 
     participant_label = phone_number[7:] if phone_number.startswith("client:") else phone_number
     participant_identity = participant_label if phone_number.startswith("client:") else None
-    print(f"Participant identity in add_participant_to_conference: {participant_identity} and participant_label: {participant_label}")  
+    current_app.logger.debug("Participant identity=%s label=%s", participant_identity, participant_label)
+  
 
     to_is_client = phone_number.startswith("client:")
 

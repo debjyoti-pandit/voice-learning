@@ -27,6 +27,7 @@ def get_value(obj, key):
 @conference_bp.route('/join_conference', methods=['POST', 'GET'])
 def join_conference():
     conference_name = request.args.get('conference_name', 'DefaultRoom')
+    current_app.logger.info("🎪 join_conference invoked", extra={"params": request.args.to_dict()})
     caller_identity = request.args.get('identity', None)
     start_conference_on_enter = str2bool(request.args.get('start_conference_on_enter'), True)
     end_conference_on_exit = str2bool(request.args.get('end_conference_on_exit'), True)
@@ -49,9 +50,8 @@ def join_conference():
     def sc_url():
         base = url_for('conference.conference_events', _external=True)
         if caller_identity:
-            # print(f"caller_identity is present for conference: {conference_name} so adding it to the status callback url: {caller_identity}")
+            current_app.logger.debug("🎪 Caller identity present for conference: %s", conference_name)
             return f"{base}?identity={caller_identity}"
-        # print(f"caller_identity is not present for conference: {conference_name} so not adding it to the status callback url")
         return base
 
     dial = response.dial(record='record-from-answer-dual')
@@ -67,18 +67,23 @@ def join_conference():
         status_callback_method='POST',
         status_callback_event='start end join leave hold mute'
     )
+    current_app.logger.info("🎪 join_conference processing complete")
     return xml_response(response)
 
 @conference_bp.route('/conference-events', methods=['POST', 'GET'])
 def conference_events():
     """Webhook endpoint for Twilio conference status callbacks."""
+    current_app.logger.info("🎪 conference_events endpoint invoked")
     socketio = current_app.config['socketio']
 
-    return ConferenceEventsHandler(socketio).handle(request)
+    resp = ConferenceEventsHandler(socketio).handle(request)
+    current_app.logger.info("🎪 conference_events endpoint processing complete")
+    return resp
 
 @conference_bp.route('/connect_to_conference', methods=['POST', 'GET'])
 def connect_to_conference():
     conference_name = request.args.get('conference_name', 'DefaultRoom')
+    current_app.logger.info("🎪 connect_to_conference invoked", extra={"params": request.args.to_dict()})
     response = VoiceResponse()
 
     caller_identity = None
@@ -104,6 +109,7 @@ def connect_to_conference():
         status_callback_method='POST',
         status_callback_event='start end join leave hold mute'
     )
+    current_app.logger.info("🎪 connect_to_conference processing complete")
     return xml_response(response)
 
 @conference_bp.route('/conference-announcement', methods=['POST', 'GET'])
@@ -114,6 +120,7 @@ def conference_announcement():
 
 @conference_bp.route('/conference/<conference_name>/participants', methods=['GET'])
 def get_conference_participants(conference_name):
+    current_app.logger.info("🎪 get_conference_participants invoked", extra={"conference_name": conference_name})
     redis = current_app.config['redis']
     participants = redis.get(conference_name, {}).get('participants', {})
     result = []
@@ -128,11 +135,13 @@ def get_conference_participants(conference_name):
             'call_sid': info.get('call_sid'),
             'role': info.get('role'),
         })
+    current_app.logger.info("🎪 get_conference_participants processing complete")
     return jsonify(result)
 
 @conference_bp.route('/conference/mute', methods=['POST'])
 def mute_participant():
     data = request.get_json()
+    current_app.logger.info("🎪 mute_participant invoked", extra={"payload": data})
     conference_name = data.get('conference_name')
     call_sid = data.get('call_sid')
     mute = data.get('mute', True)
@@ -147,6 +156,7 @@ def mute_participant():
         p = redis[conference_name]['participants'].get(call_sid)
         if p:
             p['muted'] = bool(mute)
+        current_app.logger.info("🎪 mute_participant processing complete")
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -154,6 +164,7 @@ def mute_participant():
 @conference_bp.route('/conference/hold', methods=['POST'])
 def hold_participant():
     data = request.get_json()
+    current_app.logger.info("🎪 hold_participant invoked", extra={"payload": data})
     conference_name = data.get('conference_name')
     call_sid = data.get('call_sid')
     hold = data.get('hold', True)
@@ -168,6 +179,7 @@ def hold_participant():
         p = redis[conference_name]['participants'].get(call_sid)
         if p:
             p['on_hold'] = bool(hold)
+        current_app.logger.info("🎪 hold_participant processing complete")
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -175,6 +187,7 @@ def hold_participant():
 @conference_bp.route('/conference/kick', methods=['POST'])
 def kick_participant():
     data = request.get_json()
+    current_app.logger.info("🎪 kick_participant invoked", extra={"payload": data})
     conference_name = data.get('conference_name')
     call_sid = data.get('call_sid')
 
@@ -192,6 +205,7 @@ def kick_participant():
         p = redis[conference_name]['participants'].get(call_sid)
         if p:
             p['left'] = True
+        current_app.logger.info("🎪 kick_participant processing complete")
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from twilio.jwt.access_token import AccessToken
 from twilio.jwt.access_token.grants import VoiceGrant
 from dotenv import load_dotenv
@@ -16,6 +16,7 @@ TWIML_APP_SID = os.getenv('TWIML_APP_SID')
 @auth_bp.route('/token', methods=['GET'])
 def token():
     """Generate a JWT access token for Twilio Voice."""
+    current_app.logger.info("🔑 token endpoint invoked", extra={"params": request.args.to_dict()})
     identity = request.args.get('identity', 'debjyoti-dialer-app')
 
     token = AccessToken(
@@ -31,4 +32,5 @@ def token():
     if isinstance(jwt_token, bytes):
         jwt_token = jwt_token.decode()
 
+    current_app.logger.info("🔑 token endpoint processing complete for identity: %s", identity)
     return jsonify(token=jwt_token, identity=identity)

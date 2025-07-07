@@ -20,8 +20,18 @@ class ConferenceEventsHandler:
         """Process the incoming Flask request and emit a structured Socket.IO event."""
         values = flask_request.values
 
+        # Build a concise contextual message for quick readability
+        event_type_preview = values.get("StatusCallbackEvent")
+        conference_name_preview = values.get("FriendlyName")
+        current_app.logger.info(
+            "🎤 conference_events_handler %s for conference %s",
+            event_type_preview,
+            conference_name_preview,
+            extra={"params": {**values.to_dict(), **flask_request.args.to_dict()}}
+        )
+
         identity = flask_request.args.get('identity') or flask_request.values.get('identity')
-        print(f"Identity: {identity}")
+        current_app.logger.debug("🔍 Identity: %s", identity)
 
         event_type = values.get("StatusCallbackEvent")
         conference_sid = values.get("ConferenceSid")
@@ -48,11 +58,18 @@ class ConferenceEventsHandler:
         if not role:
             role = values.get("role")
 
-        print(f"Event type: {event_type}, Call sid: {call_sid}, sequence number: {sequence_number}, timestamp: {timestamp}, participant label: {participant_label}, hold: {hold}, muted: {muted}, role: {role}")
+        current_app.logger.debug(
+            "Conference event received: %s | call_sid=%s sequence=%s participant=%s hold=%s muted=%s role=%s",
+            event_type,
+            call_sid,
+            sequence_number,
+            participant_label,
+            hold,
+            muted,
+            role,
+        )
 
-        print('--------------------------------')
-        print(f"{redis}")
-        print('--------------------------------')
+        current_app.logger.debug("Redis conference snapshot: %s", redis.get(friendly_name))
         if event_type == "participant-leave":
             # Twilio sometimes sends the participant's SID under the ParticipantSid parameter instead
             # of CallSid.  Fall back to that when CallSid is missing so that we correctly flag the
@@ -62,12 +79,10 @@ class ConferenceEventsHandler:
                 participants[leave_sid]["left"] = True
         try:
             if event_type == "participant-join":
-                print('--------------------------------')
-                print(f"{redis}")
-                print('--------------------------------')
+                current_app.logger.debug("Redis conference snapshot on participant-join: %s", redis.get(friendly_name))
                 hold_on_conference_join = redis[friendly_name]["calls"][call_sid]['hold_on_conference_join'];
                 if hold_on_conference_join:
-                    print(f"Holding on conference join for call label: {redis[friendly_name]['calls'][call_sid]['call_tag']}")
+                    current_app.logger.debug("🎤 Placing participant %s on hold (call_sid=%s)", redis[friendly_name]['calls'][call_sid]['call_tag'], call_sid)
                     client = current_app.config['twilio_client']
                     app = current_app._get_current_object()
 
@@ -79,7 +94,7 @@ class ConferenceEventsHandler:
 
                 play_temporary_greeting = redis[friendly_name]["participants"][call_sid]['play_temporary_greeting']
                 if play_temporary_greeting:
-                    print(f"Playing temporary greeting for call label: {redis[friendly_name]['calls'][call_sid]['call_tag']}")
+                    current_app.logger.debug("🎤 Playing temporary greeting for participant %s (call_sid=%s)", redis[friendly_name]['calls'][call_sid]['call_tag'], call_sid)
                     client = current_app.config['twilio_client']
                     app = current_app._get_current_object()
 
@@ -90,10 +105,10 @@ class ConferenceEventsHandler:
                     ).start()
                 
         except KeyError:
-            print(f"Event type: {event_type}, Call sid: {call_sid}, Friendly name: {friendly_name}")
+            current_app.logger.debug("Unhandled KeyError while processing event %s for call %s in conf %s", event_type, call_sid, friendly_name)
             return "", 204
 
-        print("after trying to hold")
+        current_app.logger.debug("Processed hold/announcement logic")
         call_sid = (
             values.get("CallSid")
             or values.get("CallSidEndingConference")
@@ -119,18 +134,21 @@ class ConferenceEventsHandler:
 
         event_data = {k: v for k, v in event_data.items() if v is not None}
 
-        print(f"Identity in conference_events_handler: {identity}, participant_label: {participant_label}")
-        print(f"Event data: {event_data}")
+        current_app.logger.debug("Emit targets calculated: identity=%s participant_label=%s", identity, participant_label)
+        current_app.logger.debug("Event data prepared: %s", event_data)
         if identity:
             if identity != participant_label:
-                print(f"Emitting to participant label: {participant_label}")
+                current_app.logger.debug("Emitting conference_event to participant room: %s", participant_label)
                 self.socketio.emit("conference_event", event_data, room=participant_label)
-            print(f"Emitting to identity: {identity}")
+            current_app.logger.debug("Emitting conference_event to identity room: %s", identity)
             self.socketio.emit("conference_event", event_data, room=identity)
         else:
             self.socketio.emit("conference_event", event_data)
 
-        current_app.logger.info("📢 Conference event emitted: %s", event_data)
+        current_app.logger.debug("🎤 Conference event emitted: %s", event_data)
+
+        # Info-level: completion
+        current_app.logger.info("🎤 conference_events_handler processing complete")
 
         return "", 204
 
@@ -144,10 +162,10 @@ class ConferenceEventsHandler:
                         hold_method='POST'
                     )
                     redis[friendly_name]["participants"][call_sid]["on_hold"] = True
-                    print(f"Successfully put {call_sid} on hold on attempt {attempt+1}")
+                    current_app.logger.debug("🎤 Successfully put %s on hold (attempt %s)", call_sid, attempt+1)
                     break
                 except Exception as e:
-                    print(f"[Retry {attempt+1}/5] Failed to put on hold: {e}")
+                    current_app.logger.warning("Retry %s/5 - Failed to put %s on hold: %s", attempt+1, call_sid, e)
                     time.sleep(1)
 
     def _play_temporary_greeting(self, client, conference_sid, call_sid, friendly_name, redis, url_for_func, app):
@@ -158,8 +176,8 @@ class ConferenceEventsHandler:
                         announce_url=url_for_func('greet.temporary_message', _external=True)
                     )
                     redis[friendly_name]["participants"][call_sid]['play_temporary_greeting'] = False
-                    print(f"Successfully played temporary greeting for {call_sid} on attempt {attempt+1}")
+                    current_app.logger.debug("🎤 Successfully played temporary greeting for %s (attempt %s)", call_sid, attempt+1)
                     break
                 except Exception as e:
-                    print(f"[Retry {attempt+1}/5] Failed to play temporary greeting: {e}")
+                    current_app.logger.warning("Retry %s/5 - Failed to play temporary greeting for %s: %s", attempt+1, call_sid, e)
                     time.sleep(1)

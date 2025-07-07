@@ -1,5 +1,6 @@
 import time
 from flask_socketio import SocketIO
+from flask import current_app
 
 class CallEventsHandler:
     """Encapsulates the business logic for processing Twilio call-event webhooks."""
@@ -10,6 +11,7 @@ class CallEventsHandler:
 
     def handle(self, flask_request):
         """Process the incoming Flask request and emit events."""
+        current_app.logger.info("📞 call_events_handler invoked", extra={"params": {**flask_request.values.to_dict(), **flask_request.args.to_dict()}})
         identity = flask_request.args.get('identity') or flask_request.values.get('identity')
         sid = flask_request.values.get('CallSid')
         parent_sid = flask_request.values.get('ParentCallSid')
@@ -18,6 +20,8 @@ class CallEventsHandler:
         to_number = flask_request.values.get('To')
         timestamp = time.time()
         duration = flask_request.values.get('CallDuration')
+
+        current_app.logger.debug("📞 Parsed params: identity=%s sid=%s parent_sid=%s status=%s", identity, sid, parent_sid, status)
 
         call_type = 'child' if parent_sid else 'parent'
 
@@ -44,6 +48,7 @@ class CallEventsHandler:
 
         self._maybe_emit_ring_duration(log_key, call_type, sid, parent_sid, timestamp, identity)
 
+        current_app.logger.info("📞 call_events_handler processing complete for call_sid: %s (status: %s)", sid, status)
         return '', 204
 
     def _emit_parent_child_sids(self, call_type: str, sid: str, parent_sid: str | None, identity: str | None):
@@ -91,7 +96,6 @@ class CallEventsHandler:
         return log_key
 
     def _emit_status_event(self, call_type, sid, parent_sid, status, from_number, to_number, timestamp, duration, identity: str | None):
-        # print(f"Identity in _emit_status_event: {identity}, call_type: {call_type}, sid: {sid}, parent_sid: {parent_sid}, status: {status}, from_number: {from_number}, to_number: {to_number}, timestamp: {timestamp}, duration: {duration}")
         if identity is None:
             return
 
@@ -126,7 +130,6 @@ class CallEventsHandler:
 
     def _maybe_emit_ring_duration(self, log_key, call_type, sid, parent_sid, timestamp, identity: str | None):
         if identity is None:
-            # print("Identity is None, skipping emit from ring duration")
             return
         entry = self.call_log[log_key]
         if (
