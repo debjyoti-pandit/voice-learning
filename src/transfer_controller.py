@@ -48,20 +48,20 @@ def warm_transfer():
     conference_name = f"{parent_name}-with-{child_name}"
 
     recordings = {}
-    try:
-        recording = client.recordings.list(call_sid=parent_call_sid, limit=1)
-        if recording:
-            print(f"Stopping initial recording for parent call: {recording[0].sid}")
-            recordings[parent_call_sid] = recording[0].sid
-            client.recordings(recording[0].sid).update(status='stopped')
-        else:
-            recording = client.recordings.list(call_sid=child_call_sid, limit=1)
-            if recording:
-                print(f"Stopping initial recording for child call: {recording[0].sid}")
-                recordings[child_call_sid] = recording[0].sid
-                client.recordings(recording[0].sid).update(status='stopped')
-    except Exception as e:
-        current_app.logger.warning(f"Could not access recordings to stop initial: {e}")
+    # try:
+    #     recording = client.recordings.list(call_sid=parent_call_sid, limit=1)
+    #     if recording:
+    #         print(f"Stopping initial recording for parent call: {recording[0].sid}")
+    #         recordings[parent_call_sid] = recording[0].sid
+    #         client.recordings(recording[0].sid).update(status='stopped')
+    #     else:
+    #         recording = client.recordings.list(call_sid=child_call_sid, limit=1)
+    #         if recording:
+    #             print(f"Stopping initial recording for child call: {recording[0].sid}")
+    #             recordings[child_call_sid] = recording[0].sid
+    #             client.recordings(recording[0].sid).update(status='stopped')
+    # except Exception as e:
+    #     current_app.logger.warning(f"Could not access recordings to stop initial: {e}")
 
     hold_on_conference_join = {
         parent_call_sid: False,
@@ -110,17 +110,33 @@ def warm_transfer():
             start_conference_on_enter[child_call_sid] = False
             end_conference_on_exit[child_call_sid] = False
         
-    # initial_call_recording
-    try: # remove the streams 
-        client.calls(parent_call_sid).streams("initial_call_recording").update(status="stopped")
-        client.calls(child_call_sid).streams("initial_call_recording").update(status="stopped")
-    except Exception as e:
-        current_app.logger.warning(f"Could not stop stream to stop initial: {e}")
+    # for sid_label, sid in {"parent": parent_call_sid, "child": child_call_sid}.items():
+    #     try:
+    #         client.calls(sid).streams("initial_call_recording").update(status="stopped")
+    #     except Exception as e:
+    #         current_app.logger.info(f"No stream to stop on {sid_label} leg: {e}")
+
 
     try:
         redis = current_app.config['redis']
+        redis[parent_call_sid] = {
+            "participant_label": parent_name,
+            "child_call_sid": child_call_sid,
+            "child_call_moved_to_conference": True,
+            "identity": identity,
+            "stream_audio": True,
+            "conference": {
+                "conference_name": conference_name,
+                "on_hold": hold_on_conference_join[parent_call_sid],
+                "role": parent_role,
+                "start_conference_on_enter": start_conference_on_enter[parent_call_sid],
+                "end_conference_on_exit": end_conference_on_exit[parent_call_sid],
+                "mute": mute_on_conference_join[parent_call_sid],
+            },
+        }
         redis[conference_name] = {
             "created_by": identity,
+            "created": False,
             "calls": {
                parent_call_sid: {
                    "call_tag": parent_name,
@@ -137,11 +153,11 @@ def warm_transfer():
             },
             "participants": {}
         }
+        
         client.calls(child_call_sid).update(
             url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=child_name, start_conference_on_enter=start_conference_on_enter[child_call_sid], end_conference_on_exit=end_conference_on_exit[child_call_sid], role=child_role, identity=identity, stream_audio=True),
             method='POST',
         )
-        print('after joining the child call to the conference')
         redis[conference_name]['participants'][child_call_sid] = {
             'participant_label': child_name,
             'call_sid': child_call_sid,
@@ -149,19 +165,7 @@ def warm_transfer():
             'on_hold': hold_on_conference_join[child_call_sid],
             'role': child_role,
         }
-        client.calls(parent_call_sid).update(
-            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=parent_name, start_conference_on_enter=start_conference_on_enter[parent_call_sid], end_conference_on_exit=end_conference_on_exit[parent_call_sid], mute=mute_on_conference_join[parent_call_sid], role=parent_role, identity=identity, stream_audio=True),
-            method='POST',
-        )
-        print('after joining the parent call to the conference')
-
-        redis[conference_name]['participants'][parent_call_sid] = {
-            'participant_label': parent_name,
-            'call_sid': parent_call_sid,
-            'muted': mute_on_conference_join[parent_call_sid],
-            'on_hold': hold_on_conference_join[parent_call_sid],
-            'role': parent_role,
-        }
+        print(f'after joining the child call to the conference: {conference_name}')
 
         add_participant_to_conference(conference_name, transfer_to, identity)
 

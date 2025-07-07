@@ -50,6 +50,9 @@ class ConferenceEventsHandler:
 
         print(f"Event type: {event_type}, Call sid: {call_sid}, sequence number: {sequence_number}, timestamp: {timestamp}, participant label: {participant_label}, hold: {hold}, muted: {muted}, role: {role}")
 
+        print('--------------------------------')
+        print(f"{redis}")
+        print('--------------------------------')
         if event_type == "participant-leave":
             # Twilio sometimes sends the participant's SID under the ParticipantSid parameter instead
             # of CallSid.  Fall back to that when CallSid is missing so that we correctly flag the
@@ -59,6 +62,9 @@ class ConferenceEventsHandler:
                 participants[leave_sid]["left"] = True
         try:
             if event_type == "participant-join":
+                print('--------------------------------')
+                print(f"{redis}")
+                print('--------------------------------')
                 hold_on_conference_join = redis[friendly_name]["calls"][call_sid]['hold_on_conference_join'];
                 if hold_on_conference_join:
                     print(f"Holding on conference join for call label: {redis[friendly_name]['calls'][call_sid]['call_tag']}")
@@ -71,10 +77,17 @@ class ConferenceEventsHandler:
                         daemon=True
                     ).start()
 
-                # play_temporary_greeting = redis[friendly_name]["calls"][call_sid]['play_temporary_greeting'];
-                # if play_temporary_greeting:
-                #     print(f"Playing temporary greeting for call label: {redis[friendly_name]['calls'][call_sid]['call_tag']}")
-                #     self.socketio.emit("conference_event", {"event": "play_temporary_greeting"}, room=participant_label)
+                play_temporary_greeting = redis[friendly_name]["participants"][call_sid]['play_temporary_greeting']
+                if play_temporary_greeting:
+                    print(f"Playing temporary greeting for call label: {redis[friendly_name]['calls'][call_sid]['call_tag']}")
+                    client = current_app.config['twilio_client']
+                    app = current_app._get_current_object()
+
+                    threading.Thread(
+                        target=self._play_temporary_greeting,
+                        args=(client, conference_sid, call_sid, friendly_name, redis, url_for, app),
+                        daemon=True
+                    ).start()
                 
         except KeyError:
             print(f"Event type: {event_type}, Call sid: {call_sid}, Friendly name: {friendly_name}")
@@ -135,4 +148,18 @@ class ConferenceEventsHandler:
                     break
                 except Exception as e:
                     print(f"[Retry {attempt+1}/5] Failed to put on hold: {e}")
+                    time.sleep(1)
+
+    def _play_temporary_greeting(self, client, conference_sid, call_sid, friendly_name, redis, url_for_func, app):
+        with app.app_context():
+            for attempt in range(5):
+                try:
+                    client.conferences(conference_sid).participants(call_sid).update(
+                        announce_url=url_for_func('greet.temporary_message', _external=True)
+                    )
+                    redis[friendly_name]["participants"][call_sid]['play_temporary_greeting'] = False
+                    print(f"Successfully played temporary greeting for {call_sid} on attempt {attempt+1}")
+                    break
+                except Exception as e:
+                    print(f"[Retry {attempt+1}/5] Failed to play temporary greeting: {e}")
                     time.sleep(1)

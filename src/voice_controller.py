@@ -23,7 +23,6 @@ def voice():
     stream.parameter(name='track1_label', value="aiva")
     start.append(stream)
     response.append(start)
-    response.say('The stream has started.')
 
     if to_number:
         dial = response.dial(
@@ -67,6 +66,49 @@ def voice():
 @voice_bp.route('/hangup', methods=['GET', 'POST'])
 def hangup_call():
     """Terminate the current call leg."""
+    redis = current_app.config['redis']
+    call_id = request.values.get('CallSid')
+    print(f"call_id in hangup_call: {call_id}")
+    if call_id in redis:
+        redis_data = redis[call_id];
+        if redis_data['child_call_moved_to_conference']:
+            conference_name = redis_data['conference']['conference_name']
+            participant_label = redis_data['participant_label']
+            start_conference_on_enter = redis_data['conference']['start_conference_on_enter']
+            end_conference_on_exit = redis_data['conference']['end_conference_on_exit']
+            on_hold = redis_data['conference']['on_hold']
+            mute = redis_data['conference']['mute']
+            role = redis_data['conference']['role']
+            identity = redis_data['identity']
+            stream_audio = redis_data['stream_audio']
+
+            client = current_app.config['twilio_client']
+            client.calls(call_id).update(
+                url=url_for('conference.join_conference', _external=True, 
+                            conference_name=conference_name, 
+                            participant_label=participant_label, 
+                            start_conference_on_enter=start_conference_on_enter, 
+                            end_conference_on_exit=end_conference_on_exit, 
+                            mute=mute, 
+                            role=role, 
+                            identity=identity, 
+                            stream_audio=stream_audio),
+                method='POST',
+            )
+            print('after joining the parent call to the conference')
+
+            redis[conference_name]['participants'][call_id] = {
+                'participant_label': participant_label,
+                'call_sid': call_id,
+                'muted': mute,
+                'on_hold': on_hold,
+                'role': role,
+            }
+            # Respond with an empty TwiML document to acknowledge the request.
+            empty_resp = VoiceResponse()
+            return xml_response(empty_resp)
+        
+    print(f"there is no conference running so hanging up the call: {call_id}")
     resp = VoiceResponse()
     resp.hangup()
     return xml_response(resp)

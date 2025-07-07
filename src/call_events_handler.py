@@ -11,7 +11,6 @@ class CallEventsHandler:
     def handle(self, flask_request):
         """Process the incoming Flask request and emit events."""
         identity = flask_request.args.get('identity') or flask_request.values.get('identity')
-        print(f"Identity in call_events_handler: {identity}")
         sid = flask_request.values.get('CallSid')
         parent_sid = flask_request.values.get('ParentCallSid')
         status = flask_request.values.get('CallStatus')
@@ -50,7 +49,6 @@ class CallEventsHandler:
     def _emit_parent_child_sids(self, call_type: str, sid: str, parent_sid: str | None, identity: str | None):
 
         if identity is None:
-            print("Identity is None, skipping emit from parent child sids")
             return
 
         if call_type == 'parent':
@@ -93,9 +91,8 @@ class CallEventsHandler:
         return log_key
 
     def _emit_status_event(self, call_type, sid, parent_sid, status, from_number, to_number, timestamp, duration, identity: str | None):
-        print(f"Identity in _emit_status_event: {identity}, call_type: {call_type}, sid: {sid}, parent_sid: {parent_sid}, status: {status}, from_number: {from_number}, to_number: {to_number}, timestamp: {timestamp}, duration: {duration}")
+        # print(f"Identity in _emit_status_event: {identity}, call_type: {call_type}, sid: {sid}, parent_sid: {parent_sid}, status: {status}, from_number: {from_number}, to_number: {to_number}, timestamp: {timestamp}, duration: {duration}")
         if identity is None:
-            print("Identity is None, skipping emit from call status event")
             return
 
         event_data = {
@@ -129,7 +126,7 @@ class CallEventsHandler:
 
     def _maybe_emit_ring_duration(self, log_key, call_type, sid, parent_sid, timestamp, identity: str | None):
         if identity is None:
-            print("Identity is None, skipping emit from ring duration")
+            # print("Identity is None, skipping emit from ring duration")
             return
         entry = self.call_log[log_key]
         if (

@@ -45,14 +45,13 @@ def join_conference():
         stream.parameter(name='track1_label', value=participant_label)
         start.append(stream)
         response.append(start)
-        response.say('The stream has started.')
 
     def sc_url():
         base = url_for('conference.conference_events', _external=True)
         if caller_identity:
-            print(f"caller_identity is present for conference: {conference_name} so adding it to the status callback url: {caller_identity}")
+            # print(f"caller_identity is present for conference: {conference_name} so adding it to the status callback url: {caller_identity}")
             return f"{base}?identity={caller_identity}"
-        print(f"caller_identity is not present for conference: {conference_name} so not adding it to the status callback url")
+        # print(f"caller_identity is not present for conference: {conference_name} so not adding it to the status callback url")
         return base
 
     dial = response.dial(record='record-from-answer-dual')
