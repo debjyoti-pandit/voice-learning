@@ -442,7 +442,10 @@
         // Try to detect when we join a conference and set conference name/call sid
         if (event.event === "participant-join") {
           currentConferenceName = event.conference_name;
-          myCallSid = event.call_sid; // This will be set for the joining participant
+          // Only set myCallSid when the join event relates to **this** dialer.
+          if (event.participant_label === myIdentity) {
+            myCallSid = event.call_sid;
+          }
           showParticipantsSection(true);
           fetchAndRenderParticipants();
           startParticipantsPolling();
@@ -734,7 +737,7 @@
             li.textContent = label;
             // Only allow controls for others, never for self
             if (p.call_sid !== myCallSid) {
-              // Mute/unmute button
+              // Mute/unmute button for OTHER participants
               const muteBtn = document.createElement("button");
               muteBtn.textContent = p.muted ? "Unmute" : "Mute";
               muteBtn.style.marginLeft = "0.5rem";
@@ -751,7 +754,7 @@
                 fetchAndRenderParticipants();
               };
               li.appendChild(muteBtn);
-              // Hold/unhold button
+              // Hold/unhold button for OTHER participants
               const holdBtn = document.createElement("button");
               holdBtn.textContent = p.on_hold ? "Unhold" : "Hold";
               holdBtn.style.marginLeft = "0.5rem";
@@ -768,7 +771,7 @@
                 fetchAndRenderParticipants();
               };
               li.appendChild(holdBtn);
-              // Kick button (never allow self-kick)
+              // Kick button for OTHER participants
               const kickBtn = document.createElement("button");
               kickBtn.textContent = "Kick";
               kickBtn.style.marginLeft = "0.5rem";
@@ -779,20 +782,54 @@
                   body: JSON.stringify({
                     conference_name: currentConferenceName,
                     call_sid: p.call_sid,
+                    requester_call_sid: myCallSid,
                   }),
                 });
                 fetchAndRenderParticipants();
               };
               li.appendChild(kickBtn);
             } else {
-              // For self, show disabled buttons for UI consistency
-              ["Mute", "Hold", "Kick"].forEach((txt) => {
-                const btn = document.createElement("button");
-                btn.textContent = txt;
-                btn.disabled = true;
-                btn.style.marginLeft = "0.5rem";
-                li.appendChild(btn);
-              });
+              // --- CONTROLS FOR *SELF* PARTICIPANT ---
+              // Allow self mute/unmute and hold/unhold, but prohibit self-kick.
+              const selfMuteBtn = document.createElement("button");
+              selfMuteBtn.textContent = p.muted ? "Unmute" : "Mute";
+              selfMuteBtn.style.marginLeft = "0.5rem";
+              selfMuteBtn.onclick = async () => {
+                await fetch("/conference/mute", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    conference_name: currentConferenceName,
+                    call_sid: p.call_sid,
+                    mute: !p.muted,
+                  }),
+                });
+                fetchAndRenderParticipants();
+              };
+              li.appendChild(selfMuteBtn);
+
+              const selfHoldBtn = document.createElement("button");
+              selfHoldBtn.textContent = p.on_hold ? "Unhold" : "Hold";
+              selfHoldBtn.style.marginLeft = "0.5rem";
+              selfHoldBtn.onclick = async () => {
+                await fetch("/conference/hold", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    conference_name: currentConferenceName,
+                    call_sid: p.call_sid,
+                    hold: !p.on_hold,
+                  }),
+                });
+                fetchAndRenderParticipants();
+              };
+              li.appendChild(selfHoldBtn);
+
+              const disabledKickBtn = document.createElement("button");
+              disabledKickBtn.textContent = "Kick";
+              disabledKickBtn.disabled = true; // never allow self-kick
+              disabledKickBtn.style.marginLeft = "0.5rem";
+              li.appendChild(disabledKickBtn);
             }
             list.appendChild(li);
           });

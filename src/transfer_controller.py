@@ -123,6 +123,13 @@ def add_participant_to_conference(conference_name, phone_number, role="agent", i
     # prefix; otherwise use the raw phone number.
     participant_label = phone_number[7:] if phone_number.startswith("client:") else phone_number
 
+    # NEW: Extract the actual identity of this participant so that status
+    # callbacks can be routed directly to *their* Socket.IO room rather than the
+    # originating agent. This allows every agent that joins the conference to
+    # receive real-time conference updates.
+    participant_identity = participant_label if phone_number.startswith("client:") else None
+    print(f"Participant identity in add_participant_to_conference: {participant_identity}")  
+
     to_is_client = phone_number.startswith("client:")
 
     if to_is_client:
@@ -133,10 +140,12 @@ def add_participant_to_conference(conference_name, phone_number, role="agent", i
 
         slug = re.sub(r"[^A-Za-z0-9_\-]", "-", conference_name)[:80]  # keep short
         # Use a valid Twilio Client identity as the caller ID (must be prefixed with "client:")
-        caller_id = f"client:conference-{slug}"
+        caller_id = f"client:conference-of-{slug}"
     else:
         caller_id = current_app.config.get("TWILIO_CALLER_ID") or os.getenv("CALLER_ID")
 
+    # IMPORTANT: Pass the *participant's* identity (when available) so that the
+    # ConferenceEventsHandler emits events to the correct Socket.IO room.
     call = client.calls.create(
         to=phone_number,
         from_=caller_id,
@@ -145,7 +154,7 @@ def add_participant_to_conference(conference_name, phone_number, role="agent", i
             conference_name=conference_name,
             participant_label=participant_label,
             role=role,
-            identity=identity,
+            identity=participant_identity,
             _external=True
         ),
         method='POST'

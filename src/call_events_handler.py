@@ -11,6 +11,7 @@ class CallEventsHandler:
     def handle(self, flask_request):
         """Process the incoming Flask request and emit events."""
         identity = flask_request.args.get('identity') or flask_request.values.get('identity')
+        print(f"Identity in call_events_handler: {identity}")
         sid = flask_request.values.get('CallSid')
         parent_sid = flask_request.values.get('ParentCallSid')
         status = flask_request.values.get('CallStatus')
@@ -92,6 +93,7 @@ class CallEventsHandler:
         return log_key
 
     def _emit_status_event(self, call_type, sid, parent_sid, status, from_number, to_number, timestamp, duration, identity: str | None):
+        print(f"Identity in _emit_status_event: {identity}, call_type: {call_type}, sid: {sid}, parent_sid: {parent_sid}, status: {status}, from_number: {from_number}, to_number: {to_number}, timestamp: {timestamp}, duration: {duration}")
         if identity is None:
             print("Identity is None, skipping emit from call status event")
             return

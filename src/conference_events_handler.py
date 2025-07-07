@@ -51,8 +51,12 @@ class ConferenceEventsHandler:
         print(f"Event type: {event_type}, Call sid: {call_sid}, sequence number: {sequence_number}, timestamp: {timestamp}, participant label: {participant_label}, hold: {hold}, muted: {muted}, role: {role}")
 
         if event_type == "participant-leave":
-            if call_sid in participants:
-                participants[call_sid]["left"] = True
+            # Twilio sometimes sends the participant's SID under the ParticipantSid parameter instead
+            # of CallSid.  Fall back to that when CallSid is missing so that we correctly flag the
+            # departing participant in our in-memory cache.
+            leave_sid = call_sid or values.get("ParticipantSid")
+            if leave_sid in participants:
+                participants[leave_sid]["left"] = True
         try:
             if event_type == "participant-join":
                 hold_on_conference_join = redis[friendly_name]["calls"][call_sid]['hold_on_conference_join'];
@@ -96,7 +100,13 @@ class ConferenceEventsHandler:
 
         event_data = {k: v for k, v in event_data.items() if v is not None}
 
+        print(f"Identity in conference_events_handler: {identity}, participant_label: {participant_label}")
+        print(f"Event data: {event_data}")
         if identity:
+            if identity != participant_label:
+                print(f"Emitting to participant label: {participant_label}")
+                self.socketio.emit("conference_event", event_data, room=participant_label)
+            print(f"Emitting to identity: {identity}")
             self.socketio.emit("conference_event", event_data, room=identity)
         else:
             self.socketio.emit("conference_event", event_data)

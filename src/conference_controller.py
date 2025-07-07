@@ -107,7 +107,9 @@ def get_conference_participants(conference_name):
     participants = redis.get(conference_name, {}).get('participants', {})
     result = []
     for sid, info in participants.items():
-
+        # Skip any participant that has already left the conference
+        if info.get('left'):
+            continue
         result.append({
             'participant_label': info.get('participant_label'),
             'muted': info.get('muted'),
