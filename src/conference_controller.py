@@ -1,5 +1,5 @@
 from flask import Blueprint, current_app, jsonify, request, url_for, abort
-from twilio.twiml.voice_response import VoiceResponse
+from twilio.twiml.voice_response import VoiceResponse, Start, Stream
 from dotenv import load_dotenv
 import os
 from src.utils import xml_response
@@ -32,8 +32,18 @@ def join_conference():
     end_conference_on_exit = str2bool(request.args.get('end_conference_on_exit'), True)
     muted = str2bool(request.args.get('mute'), False)
     participant_label = request.args.get('participant_label', 'DefaultParticipant')
+    stream_audio = str2bool(request.args.get('stream_audio'), False)
 
     response = VoiceResponse()
+
+    if stream_audio:
+        stream_url = f"wss://cowbird-above-globally.ngrok-free.app"
+        start = Start()
+        stream = Stream(url=stream_url, track='both_tracks', name=participant_label)
+        stream.parameter(name='participant_label', value=participant_label)
+        start.append(stream)
+        response.append(start)
+        response.say('The stream has started.')
 
     def sc_url():
         base = url_for('conference.conference_events', _external=True)
@@ -46,7 +56,7 @@ def join_conference():
     dial = response.dial(record='record-from-answer-dual')
     dial.conference(
         conference_name,
-        wait_url=url_for('hold.hold_music', _external=True),
+        wait_url=url_for("hold.hold_music", _external=True),
         wait_method='POST',
         start_conference_on_enter=start_conference_on_enter,
         end_conference_on_exit=end_conference_on_exit,

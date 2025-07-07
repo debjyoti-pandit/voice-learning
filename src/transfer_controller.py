@@ -30,16 +30,15 @@ def warm_transfer():
     parent_call_sid = data.get('parent_call_sid')
     parent_name = data.get('parent_name')
     child_name = data.get('child_name')
-    print(f"Parent name: {parent_name} and child name: {child_name}")
     parent_role = data.get('parent_role')
     child_role = data.get('child_role')
     identity = data.get('identity')
+    transfer_to = data.get('transfer_to')
     if not parent_role or not child_role:
         return jsonify({'error': 'Missing role(s)'}), 400
-    print(f"Identity: {identity} and parent_role: {parent_role} and child_role: {child_role}")
+    print(f"Identity: {identity} and parent_role: {parent_role} and child_role: {child_role} and parent_name: {parent_name} and child_name: {child_name} and transfer_to: {transfer_to}")
     
-    transfer_to = data.get('transfer_to')
-    print(f"Transfer to: {transfer_to}")    
+      
 
     if not child_call_sid or not parent_call_sid:
         return jsonify({'error': 'Missing call SID(s)'}), 400
@@ -64,6 +63,54 @@ def warm_transfer():
     except Exception as e:
         current_app.logger.warning(f"Could not access recordings to stop initial: {e}")
 
+    hold_on_conference_join = {
+        parent_call_sid: False,
+        child_call_sid: False
+    }
+    if parent_role == "customer":
+        hold_on_conference_join[parent_call_sid] = True
+        if child_role == "agent": # not possible
+            hold_on_conference_join[child_call_sid] = False
+        else: # will only be this as child will call aiva
+            hold_on_conference_join[child_call_sid] = True
+    if parent_role == "agent":
+        hold_on_conference_join[parent_call_sid] = False
+        if child_role == "customer":
+            hold_on_conference_join[child_call_sid] = True
+        else:
+            hold_on_conference_join[child_call_sid] = False
+    print(f"Hold on conference join: {hold_on_conference_join}")
+
+    mute_on_conference_join = {
+        parent_call_sid: False,
+        child_call_sid: False
+    }
+
+    start_conference_on_enter = {
+        parent_call_sid: True,
+        child_call_sid: True
+    }
+    end_conference_on_exit = {
+        parent_call_sid: False,
+        child_call_sid: False
+    }
+
+    if parent_role == "customer":
+        start_conference_on_enter[parent_call_sid] = True
+        end_conference_on_exit[parent_call_sid] = True
+        start_conference_on_enter[child_call_sid] = False
+        end_conference_on_exit[child_call_sid] = False
+    if child_role == "agent":
+        start_conference_on_enter[parent_call_sid] = False
+        end_conference_on_exit[parent_call_sid] = False
+        if child_role == "customer":
+            start_conference_on_enter[child_call_sid] = True
+            end_conference_on_exit[child_call_sid] = True
+        else:
+            start_conference_on_enter[child_call_sid] = False
+            end_conference_on_exit[child_call_sid] = False
+        
+
     try:
         redis = current_app.config['redis']
         redis[conference_name] = {
@@ -71,13 +118,13 @@ def warm_transfer():
             "calls": {
                parent_call_sid: {
                    "call_tag": parent_name,
-                   "hold_on_conference_join": False,
+                   "hold_on_conference_join": hold_on_conference_join[parent_call_sid],
                    "initial_call_recording_sid": get_value(recordings, parent_call_sid),
                    "role": parent_role,
                },
                child_call_sid: {
                    "call_tag": child_name,
-                   "hold_on_conference_join": True,
+                   "hold_on_conference_join": hold_on_conference_join[child_call_sid],
                    "initial_call_recording_sid": get_value(recordings, child_call_sid),
                    "role": child_role,
                }
@@ -85,19 +132,19 @@ def warm_transfer():
             "participants": {}
         }
         client.calls(child_call_sid).update(
-            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=child_name, start_conference_on_enter=False, end_conference_on_exit=True, role=child_role, identity=identity),
+            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=child_name, start_conference_on_enter=start_conference_on_enter[child_call_sid], end_conference_on_exit=end_conference_on_exit[child_call_sid], role=child_role, identity=identity, stream_audio=True),
             method='POST',
         )
         print('after joining the child call to the conference')
         redis[conference_name]['participants'][child_call_sid] = {
             'participant_label': child_name,
             'call_sid': child_call_sid,
-            'muted': False,
-            'on_hold': True,
+            'muted': mute_on_conference_join[child_call_sid],
+            'on_hold': hold_on_conference_join[child_call_sid],
             'role': child_role,
         }
         client.calls(parent_call_sid).update(
-            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=parent_name, start_conference_on_enter=True, end_conference_on_exit=False, mute=True, role=parent_role, identity=identity),
+            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=parent_name, start_conference_on_enter=start_conference_on_enter[parent_call_sid], end_conference_on_exit=end_conference_on_exit[parent_call_sid], mute=mute_on_conference_join[parent_call_sid], role=parent_role, identity=identity, stream_audio=True),
             method='POST',
         )
         print('after joining the parent call to the conference')
@@ -105,12 +152,12 @@ def warm_transfer():
         redis[conference_name]['participants'][parent_call_sid] = {
             'participant_label': parent_name,
             'call_sid': parent_call_sid,
-            'muted': True,
-            'on_hold': False,
+            'muted': mute_on_conference_join[parent_call_sid],
+            'on_hold': hold_on_conference_join[parent_call_sid],
             'role': parent_role,
         }
 
-        add_participant_to_conference(conference_name, transfer_to, parent_role, identity)
+        add_participant_to_conference(conference_name, transfer_to, identity)
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -118,38 +165,23 @@ def warm_transfer():
     return jsonify({'message': 'both legs in conference'}), 200
 
 
-def add_participant_to_conference(conference_name, phone_number, role="agent", identity=None):
+def add_participant_to_conference(conference_name, phone_number, identity=None, start_conference_on_enter=True, end_conference_on_exit=False, mute=False, role="agent"):
     print(f"Adding participant to conference: {conference_name}, {phone_number}, {identity}")
     client = current_app.config['twilio_client']
 
-    # Determine a label to use for this participant inside the conference. If the
-    # destination is a Twilio Client identity (e.g. "client:alice"), strip the
-    # prefix; otherwise use the raw phone number.
     participant_label = phone_number[7:] if phone_number.startswith("client:") else phone_number
-
-    # NEW: Extract the actual identity of this participant so that status
-    # callbacks can be routed directly to *their* Socket.IO room rather than the
-    # originating agent. This allows every agent that joins the conference to
-    # receive real-time conference updates.
     participant_identity = participant_label if phone_number.startswith("client:") else None
-    print(f"Participant identity in add_participant_to_conference: {participant_identity}")  
+    print(f"Participant identity in add_participant_to_conference: {participant_identity} and participant_label: {participant_label}")  
 
     to_is_client = phone_number.startswith("client:")
 
     if to_is_client:
-        # Twilio client identities must be alphanumeric plus underscore and <=100 chars.
-        # Convert the friendly conference name to a safe slug and prepend a fixed
-        # marker so the receiving dialer can recognise it.
         import re
-
         slug = re.sub(r"[^A-Za-z0-9_\-]", "-", conference_name)[:80]  # keep short
-        # Use a valid Twilio Client identity as the caller ID (must be prefixed with "client:")
         caller_id = f"client:conference-of-{slug}"
     else:
         caller_id = current_app.config.get("TWILIO_CALLER_ID") or os.getenv("CALLER_ID")
 
-    # IMPORTANT: Pass the *participant's* identity (when available) so that the
-    # ConferenceEventsHandler emits events to the correct Socket.IO room.
     call = client.calls.create(
         to=phone_number,
         from_=caller_id,
@@ -157,18 +189,17 @@ def add_participant_to_conference(conference_name, phone_number, role="agent", i
             'conference.join_conference',
             conference_name=conference_name,
             participant_label=participant_label,
-            role=role,
+            role="agent",
+            start_conference_on_enter=start_conference_on_enter,
+            end_conference_on_exit=end_conference_on_exit,
+            stream_audio=True,
+            mute=mute,
             identity=participant_identity,
             _external=True
         ),
         method='POST'
     )
 
-    # Persist the new call/participant details in our in-memory redis cache. If this
-    # conference hasn't been tracked yet (e.g. when add_participant_to_conference is
-    # called independently of warm_transfer/hold_call flows), we create the basic
-    # structure so that subsequent look-ups via the /conference/<name>/participants
-    # endpoint work as expected.
     redis = current_app.config['redis']
 
     if conference_name not in redis:
@@ -187,9 +218,10 @@ def add_participant_to_conference(conference_name, phone_number, role="agent", i
     redis[conference_name]['participants'][call.sid] = {
         'participant_label': participant_label,
         'call_sid': call.sid,
-        'muted': False,
+        'muted': mute,
         'on_hold': False,
         'role': role,
+        "play_temporary_greeting": True,
     }
 
     return call.sid

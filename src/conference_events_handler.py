@@ -70,6 +70,12 @@ class ConferenceEventsHandler:
                         args=(client, conference_sid, call_sid, friendly_name, redis, url_for, app),
                         daemon=True
                     ).start()
+
+                # play_temporary_greeting = redis[friendly_name]["calls"][call_sid]['play_temporary_greeting'];
+                # if play_temporary_greeting:
+                #     print(f"Playing temporary greeting for call label: {redis[friendly_name]['calls'][call_sid]['call_tag']}")
+                #     self.socketio.emit("conference_event", {"event": "play_temporary_greeting"}, room=participant_label)
+                
         except KeyError:
             print(f"Event type: {event_type}, Call sid: {call_sid}, Friendly name: {friendly_name}")
             return "", 204
