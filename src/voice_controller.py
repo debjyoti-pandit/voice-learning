@@ -64,6 +64,29 @@ def hangup_call():
 @voice_bp.route('/answer', methods=['GET', 'POST'])
 def answer_call():
     """Play a simple thank-you message to the caller."""
-    resp = VoiceResponse()
-    resp.say("Thank you for calling! Have a great day.")
-    return xml_response(resp)
+    response = VoiceResponse()
+    response.say("Thank you for calling! Have a great day.")
+    caller_identity = None
+    from_header = request.values.get('From') or ''
+    if from_header.startswith('client:'):
+        caller_identity = from_header[len('client:'):]
+
+    def sc_url():
+        base = url_for('events.call_events', _external=True)
+        if caller_identity:
+            return f"{base}?identity={caller_identity}"
+        return base
+    dial = response.dial(
+        caller_id=CALLER_ID,
+        action=url_for('voice.hangup_call', _external=True),
+        method='POST',
+        timeout=20,
+        record='record-from-answer-dual'
+    )
+    dial.number(
+        "+18559421624",
+        status_callback=sc_url(),
+        status_callback_method='GET',
+        status_callback_event='initiated ringing answered completed',
+    )
+    return xml_response(response)

@@ -128,10 +128,13 @@ def hold_call_via_conference():
     parent_call_sid = data.get('parent_call_sid')
     parent_name = data.get('parent_name')
     child_name = data.get('child_name')
-    parent_role = data.get('parent_role', 'agent')
-    child_role = data.get('child_role', 'customer')
+    print(f"Parent name: {parent_name} and child name: {child_name}")
+    parent_role = data.get('parent_role')
+    child_role = data.get('child_role')
     identity = data.get('identity')
-    print(f"Identity: {identity}")
+    if not parent_role or not child_role:
+        return jsonify({'error': 'Missing role(s)'}), 400
+    print(f"Identity: {identity} and parent_role: {parent_role} and child_role: {child_role}")
 
     if not child_call_sid or not parent_call_sid:
         return jsonify({'error': 'Missing call SID(s)'}), 400
