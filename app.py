@@ -143,4 +143,6 @@ def get_connected_dialers():
     return jsonify(list(connected_identities))
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5678, debug=False)
+    port = int(os.getenv("PORT", 5678))
+    app.logger.info("🚀 Flask app listening on port %s", port)
+    socketio.run(app, host='0.0.0.0', port=port, debug=False)

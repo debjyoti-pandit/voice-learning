@@ -3,13 +3,22 @@
 
 set -euo pipefail
 
-PORT=5678
-
-# Load NAME from .env if available, otherwise fall back to environment/default
+# Load environment variables from .env safely — tolerate leading "export" and extra spaces around '='
 if [ -f .env ]; then
-  # shellcheck disable=SC2046,SC1090
-  export $(grep -v "^#" .env | xargs)  # load key=value lines
+  # shellcheck disable=SC1091
+  set -a  # automatically export all sourced vars
+  # Sanitize lines:
+  #   • remove leading "export " if present
+  #   • trim spaces around '=' so "KEY = value" becomes "KEY=value"
+  #   • skip empty/comment lines
+  source <(grep -v '^[[:space:]]*#' .env | \
+           sed -E 's/^export[[:space:]]+//' | \
+           sed -E 's/[[:space:]]*=[[:space:]]*/=/' )
+  set +a
 fi
+
+# Derive defaults when variables are unset
+PORT=${PORT:-5678}
 NAME=${NAME:-debjyoti}
 DOMAIN="${NAME}-voice-learning.ngrok-free.app"
 
