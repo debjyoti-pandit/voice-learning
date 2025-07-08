@@ -37,24 +37,17 @@ def join_conference():
 
     response = VoiceResponse()
 
-    if stream_audio:
-        stream_url = os.getenv('TRANSCRIPTION_WEBSOCKET_URL')
-        start = Start()
-        stream = Stream(url=stream_url, track='both_tracks', name=participant_label)
-        stream.parameter(name='call_flow_type', value="conference")
-        stream.parameter(name='track0_label', value="conference")
-        stream.parameter(name='track1_label', value=participant_label)
-        start.append(stream)
-        response.append(start)
-
     def sc_url():
         base = url_for('conference.conference_events', _external=True)
+        params = []
         if caller_identity:
             current_app.logger.debug("🎪 Caller identity present for conference: %s", conference_name)
-            return f"{base}?identity={caller_identity}"
-        return base
+            params.append(f"identity={caller_identity}")
+        if stream_audio:
+            params.append("stream_audio=true")
+        return f"{base}?{'&'.join(params)}" if params else base
 
-    dial = response.dial(record='record-from-answer-dual')
+    dial = response.dial()
     dial.conference(
         conference_name,
         wait_url=url_for("hold.hold_music", _external=True),
@@ -63,9 +56,13 @@ def join_conference():
         end_conference_on_exit=end_conference_on_exit,
         muted=muted,
         participant_label=participant_label,
+        record='record-from-start',
         status_callback=sc_url(),
         status_callback_method='POST',
-        status_callback_event='start end join leave hold mute'
+        status_callback_event='start end join leave hold mute',
+        recording_status_callback=url_for('conference.conference_recording_events', _external=True),
+        recording_status_callback_method='POST',
+        recording_status_callback_event='in-progress completed absent'
     )
     current_app.logger.info("🎪 join_conference processing complete")
     return xml_response(response)
@@ -105,9 +102,13 @@ def connect_to_conference():
         conference_name,
         start_conference_on_enter=True,
         end_conference_on_exit=True,
+        record='record-from-start',
         status_callback=sc_url(),
         status_callback_method='POST',
-        status_callback_event='start end join leave hold mute'
+        status_callback_event='start end join leave hold mute',
+        recording_status_callback=url_for('conference.conference_recording_events', _external=True),
+        recording_status_callback_method='POST',
+        recording_status_callback_event='in-progress completed absent'
     )
     current_app.logger.info("🎪 connect_to_conference processing complete")
     return xml_response(response)
@@ -209,3 +210,18 @@ def kick_participant():
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@conference_bp.route('/conference-recording-events', methods=['POST', 'GET'])
+def conference_recording_events():
+    """Webhook endpoint for Twilio recording status callbacks."""
+    current_app.logger.info("🎪 conference_recording_events endpoint invoked", extra={"params": request.values.to_dict()})
+
+    socketio = current_app.config['socketio']
+
+    # Broadcast the recording event details over websocket so clients can react in real-time.
+    event_data = request.values.to_dict()
+    socketio.emit("conference_recording_event", event_data)
+
+    current_app.logger.info("🎪 conference_recording_events endpoint processing complete")
+    # Twilio expects a 200 (empty) or 204 response.
+    return "", 204

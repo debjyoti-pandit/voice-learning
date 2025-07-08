@@ -2,6 +2,7 @@ from flask import current_app, url_for
 from flask_socketio import SocketIO
 import time
 import threading
+import os
 
 def str2bool(val, default=False):
     if isinstance(val, bool):
@@ -22,6 +23,7 @@ class ConferenceEventsHandler:
 
         # Build a concise contextual message for quick readability
         event_type_preview = values.get("StatusCallbackEvent")
+        stream_audio_flag = str2bool(values.get('stream_audio'))
         conference_name_preview = values.get("FriendlyName")
         current_app.logger.info(
             "🎤 conference_events_handler %s for conference %s",
@@ -80,7 +82,9 @@ class ConferenceEventsHandler:
         try:
             if event_type == "participant-join":
                 current_app.logger.debug("Redis conference snapshot on participant-join: %s", redis.get(friendly_name))
-                hold_on_conference_join = redis[friendly_name]["calls"][call_sid]['hold_on_conference_join'];
+                hold_on_conference_join = (
+                    redis[friendly_name]["calls"][call_sid].get("hold_on_conference_join", False)
+                )
                 if hold_on_conference_join:
                     current_app.logger.debug("🎤 Placing participant %s on hold (call_sid=%s)", redis[friendly_name]['calls'][call_sid]['call_tag'], call_sid)
                     client = current_app.config['twilio_client']
@@ -92,7 +96,9 @@ class ConferenceEventsHandler:
                         daemon=True
                     ).start()
 
-                play_temporary_greeting = redis[friendly_name]["participants"][call_sid]['play_temporary_greeting']
+                play_temporary_greeting = (
+                    redis[friendly_name]["participants"][call_sid].get("play_temporary_greeting", False)
+                )
                 if play_temporary_greeting:
                     current_app.logger.debug("🎤 Playing temporary greeting for participant %s (call_sid=%s)", redis[friendly_name]['calls'][call_sid]['call_tag'], call_sid)
                     client = current_app.config['twilio_client']
@@ -101,6 +107,18 @@ class ConferenceEventsHandler:
                     threading.Thread(
                         target=self._play_temporary_greeting,
                         args=(client, conference_sid, call_sid, friendly_name, redis, url_for, app),
+                        daemon=True
+                    ).start()
+                
+                current_app.logger.info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                current_app.logger.info("🎤 event_type: %s and stream_audio_flag: %s and call_sid: %s and participant_label: %s", event_type, stream_audio_flag, call_sid, participant_label)
+                if stream_audio_flag:
+                    client = current_app.config['twilio_client']
+                    app = current_app._get_current_object()
+
+                    threading.Thread(
+                        target=self._start_media_stream,
+                        args=(client, call_sid, participant_label, app),
                         daemon=True
                     ).start()
                 
@@ -180,4 +198,35 @@ class ConferenceEventsHandler:
                     break
                 except Exception as e:
                     current_app.logger.warning("Retry %s/5 - Failed to play temporary greeting for %s: %s", attempt+1, call_sid, e)
+                    time.sleep(1)
+
+    def _start_media_stream(self, client, call_sid, participant_label, app):
+        """Start a Media Stream on the specified call so audio is sent to the websocket."""
+        with app.app_context():
+            current_app.logger.info("************************************************")
+            current_app.logger.info("🎤 Starting media stream for %s", call_sid)
+            stream_url = os.getenv('TRANSCRIPTION_WEBSOCKET_URL')
+            if not stream_url:
+                current_app.logger.warning("TRANSCRIPTION_WEBSOCKET_URL not set; skipping media stream start")
+                return
+
+            for attempt in range(3):
+                try:
+                    client.calls(call_sid).streams.create(
+                        url=stream_url,
+                        track='both_tracks',
+                        name=participant_label,
+                        **{
+                            'parameter1_name': 'call_flow_type',
+                            'parameter1_value': 'conference',
+                            'parameter2_name': 'track0_label',
+                            'parameter2_value': 'conference',
+                            'parameter3_name': 'track1_label',
+                            'parameter3_value': participant_label,
+                        }
+                    )
+                    current_app.logger.debug("🎤 Successfully started media stream for %s (attempt %s)", call_sid, attempt + 1)
+                    break
+                except Exception as e:
+                    current_app.logger.warning("Retry %s/3 - Failed to start media stream for %s: %s", attempt + 1, call_sid, e)
                     time.sleep(1)
