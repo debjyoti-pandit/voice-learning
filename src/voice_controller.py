@@ -18,43 +18,42 @@ def voice():
     stream_url = os.getenv('TRANSCRIPTION_WEBSOCKET_URL')
     start = Start()
     stream = Stream(url=stream_url, track='both_tracks', name="initial_call_recording")
+    callee_label = to_number[len('client:'):] if to_number and to_number.startswith('client:') else to_number
+    caller_identity = None
+    from_header = request.values.get('From') or ''
+    if from_header.startswith('client:'):
+        caller_identity = from_header[len('client:'):]
+    caller_label = caller_identity if caller_identity else 'unknown'
     stream.parameter(name='call_flow_type', value="normal")
-    stream.parameter(name='track0_label', value="aiva")
-    stream.parameter(name='track1_label', value="debjyoti")
+    stream.parameter(name='track0_label', value=callee_label or "unknown")
+    stream.parameter(name='track1_label', value=caller_label)
     start.append(stream)
     response.append(start)
 
+    status_callback_url = url_for('events.call_events', _external=True)
+    if caller_identity:
+        status_callback_url = f"{status_callback_url}?identity={caller_identity}"
+
     if to_number:
         dial = response.dial(
-            caller_id=CALLER_ID,
+            caller_id=f"client:{caller_identity}" if to_number and to_number.startswith('client:') and caller_identity else CALLER_ID,
             action=url_for('voice.hangup_call', _external=True),
             method='POST',
             timeout=20,
             record='record-from-answer-dual'
         )
-        caller_identity = None
-        from_header = request.values.get('From') or ''
-        if from_header.startswith('client:'):
-            caller_identity = from_header[len('client:'):]
-
-        def sc_url():
-            base = url_for('events.call_events', _external=True)
-            if caller_identity:
-                return f"{base}?identity={caller_identity}"
-            return base
-
         if to_number.startswith('client:'):
             client_name = to_number[len('client:'):]
             dial.client(
                 client_name,
-                status_callback=sc_url(),
+                status_callback=status_callback_url,
                 status_callback_method='GET',
                 status_callback_event='initiated ringing answered completed',
             )
         else:
             dial.number(
                 to_number,
-                status_callback=sc_url(),
+                status_callback=status_callback_url,
                 status_callback_method='GET',
                 status_callback_event='initiated ringing answered completed',
             )
