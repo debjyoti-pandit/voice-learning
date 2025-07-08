@@ -12,6 +12,7 @@ from src.transfer_controller import transfer_bp
 import os
 from twilio.rest import Client
 import logging
+from src.constants import SERVER_DOMAIN
 
 load_dotenv()
 
@@ -72,7 +73,7 @@ app.config['call_log'] = call_log
 redis: dict[str, dict] = {}
 app.config['redis'] = redis
 
-app.config['SERVER_NAME'] = 'debjyoti-voice-learning.ngrok-free.app'
+app.config['SERVER_NAME'] = SERVER_DOMAIN
 app.config['PREFERRED_URL_SCHEME'] = 'https'
 
 app.register_blueprint(templates_bp)

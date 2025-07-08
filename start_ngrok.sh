@@ -4,7 +4,14 @@
 set -euo pipefail
 
 PORT=5678
-DOMAIN="debjyoti-voice-learning.ngrok-free.app"
+
+# Load NAME from .env if available, otherwise fall back to environment/default
+if [ -f .env ]; then
+  # shellcheck disable=SC2046,SC1090
+  export $(grep -v "^#" .env | xargs)  # load key=value lines
+fi
+NAME=${NAME:-debjyoti}
+DOMAIN="${NAME}-voice-learning.ngrok-free.app"
 
 # Check if ngrok is installed
 if ! command -v ngrok &> /dev/null; then

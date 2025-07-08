@@ -3,6 +3,7 @@ from twilio.jwt.access_token import AccessToken
 from twilio.jwt.access_token.grants import VoiceGrant
 from dotenv import load_dotenv
 import os
+from src.constants import DEFAULT_IDENTITY
 
 load_dotenv()
 
@@ -17,7 +18,7 @@ TWIML_APP_SID = os.getenv('TWIML_APP_SID')
 def token():
     """Generate a JWT access token for Twilio Voice."""
     current_app.logger.info("🔑 token endpoint invoked", extra={"params": request.args.to_dict()})
-    identity = request.args.get('identity', 'debjyoti-dialer-app')
+    identity = request.args.get('identity', DEFAULT_IDENTITY)
 
     token = AccessToken(
         TWILIO_ACCOUNT_SID,

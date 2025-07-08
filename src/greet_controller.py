@@ -3,6 +3,7 @@ from twilio.twiml.voice_response import VoiceResponse
 from dotenv import load_dotenv
 from src.utils import xml_response
 import logging
+from src.constants import NAME
 
 load_dotenv()
 
@@ -19,7 +20,7 @@ def play_greeting_to_participant(participant_call_sid: str, conference_name: str
 def greeting():
     current_app.logger.info("🙋 greeting endpoint invoked")
     resp = VoiceResponse()
-    resp.say("Thank you for calling Debjyoti's Dialer App! Have a great day.")
+    resp.say(f"Thank you for calling {NAME.title()}\'s Dialer App! Have a great day.")
     current_app.logger.info("🙋 greeting endpoint processing complete")
     return xml_response(resp)
 

@@ -171,8 +171,8 @@
       const urlParams = new URLSearchParams(window.location.search);
       let myIdentity =
         urlParams.get("identity") ||
-        prompt("Enter your identity", "debjyoti") ||
-        "debjyoti";
+        prompt("Enter your identity", "{{ default_name }}") ||
+        "{{ default_name }}";
       const socket = io({ query: { identity: myIdentity } }); // Connect to Flask-SocketIO with identity
       const logEl = document.getElementById("log");
       const callButton = document.getElementById("call-button");
@@ -694,7 +694,7 @@
         },
         {
           name: "New Dialer",
-          number: "client:debjyoti",
+          number: "client:{{ default_name }}",
         },
       ];
 
