@@ -38,7 +38,7 @@ def join_conference():
     response = VoiceResponse()
 
     if stream_audio:
-        stream_url = f"wss://cowbird-above-globally.ngrok-free.app"
+        stream_url = os.getenv('TRANSCRIPTION_WEBSOCKET_URL')
         start = Start()
         stream = Stream(url=stream_url, track='both_tracks', name=participant_label)
         stream.parameter(name='call_flow_type', value="conference")

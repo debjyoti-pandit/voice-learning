@@ -15,7 +15,7 @@ def voice():
     to_number = request.values.get('To')
     response = VoiceResponse()
 
-    stream_url = f"wss://cowbird-above-globally.ngrok-free.app"
+    stream_url = os.getenv('TRANSCRIPTION_WEBSOCKET_URL')
     start = Start()
     stream = Stream(url=stream_url, track='both_tracks', name="initial_call_recording")
     stream.parameter(name='call_flow_type', value="normal")

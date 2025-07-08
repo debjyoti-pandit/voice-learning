@@ -51,18 +51,18 @@ def warm_transfer():
     conference_name = f"{parent_name}-with-{child_name}"
 
     recordings = {}
-    # try:
-    #     recording = client.recordings.list(call_sid=parent_call_sid, limit=1)
-    #     if recording:
-    #         recordings[parent_call_sid] = recording[0].sid
-    #         client.recordings(recording[0].sid).update(status='stopped')
-    #     else:
-    #         recording = client.recordings.list(call_sid=child_call_sid, limit=1)
-    #         if recording:
-    #             recordings[child_call_sid] = recording[0].sid
-    #             client.recordings(recording[0].sid).update(status='stopped')
-    # except Exception as e:
-    #     current_app.logger.warning(f"Could not access recordings to stop initial: {e}")
+    try:
+        recording = client.recordings.list(call_sid=parent_call_sid, limit=1)
+        if recording:
+            recordings[parent_call_sid] = recording[0].sid
+            client.recordings(recording[0].sid).update(status='stopped')
+        else:
+            recording = client.recordings.list(call_sid=child_call_sid, limit=1)
+            if recording:
+                recordings[child_call_sid] = recording[0].sid
+                client.recordings(recording[0].sid).update(status='stopped')
+    except Exception as e:
+        current_app.logger.error(f"Could not access recordings to stop initial: {e}")
 
     hold_on_conference_join = {
         parent_call_sid: False,
@@ -111,11 +111,11 @@ def warm_transfer():
             start_conference_on_enter[child_call_sid] = False
             end_conference_on_exit[child_call_sid] = False
         
-    # for sid_label, sid in {"parent": parent_call_sid, "child": child_call_sid}.items():
-    #     try:
-    #         client.calls(sid).streams("initial_call_recording").update(status="stopped")
-    #     except Exception as e:
-    #         current_app.logger.info(f"No stream to stop on {sid_label} leg: {e}")
+    for sid_label, sid in {"parent": parent_call_sid, "child": child_call_sid}.items():
+        try:
+            client.calls(sid).streams("initial_call_recording").update(status="stopped")
+        except Exception as e:
+            current_app.logger.error(f"No stream to stop on {sid_label} leg: {e}")
 
 
     try:
@@ -195,6 +195,23 @@ def add_participant_to_conference(conference_name, phone_number, identity=None, 
     else:
         caller_id = current_app.config.get("TWILIO_CALLER_ID") or os.getenv("CALLER_ID")
 
+    # ------------------------------------------------------------------
+    # Configure a status callback so that we receive call-level events
+    # (initiated, ringing, answered, completed) for this participant leg.
+    # These events are handled by ``/call-events`` and propagated to the
+    # browser via Socket.IO, enabling the UI to reflect real-time call
+    # progress such as *ringing* – which is missing when no callback is
+    # specified.
+    # ------------------------------------------------------------------
+
+    def _status_callback_url():
+        """Return the absolute URL for the call status callback, including
+        the identity query parameter when available so that the handler can
+        emit Socket.IO events to the correct room."""
+
+        base = url_for('events.call_events', _external=True)
+        return f"{base}?identity={identity}" if identity else base
+
     call = client.calls.create(
         to=phone_number,
         from_=caller_id,
@@ -210,7 +227,10 @@ def add_participant_to_conference(conference_name, phone_number, identity=None, 
             identity=participant_identity,
             _external=True
         ),
-        method='POST'
+        method='POST',
+        status_callback=_status_callback_url(),
+        status_callback_method='GET',
+        status_callback_event=['initiated', 'ringing', 'answered', 'completed'],
     )
 
     redis = current_app.config['redis']
