@@ -19,8 +19,8 @@ def voice():
     start = Start()
     stream = Stream(url=stream_url, track='both_tracks', name="initial_call_recording")
     stream.parameter(name='call_flow_type', value="normal")
-    stream.parameter(name='track0_label', value="debjyoti")
-    stream.parameter(name='track1_label', value="aiva")
+    stream.parameter(name='track0_label', value="aiva")
+    stream.parameter(name='track1_label', value="debjyoti")
     start.append(stream)
     response.append(start)
 
