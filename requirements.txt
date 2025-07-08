@@ -3,3 +3,5 @@ twilio
 flask-socketio
 python-dotenv
 watchdog
+requests
+pydub
