@@ -50,8 +50,41 @@ class CallEventsHandler:
             self.call_log[log_key]['ringing_time'] = timestamp
         elif status == 'in-progress':
             redis = current_app.config['redis']
+
             call_info = redis.get(sid, {})
+            call_conference_info = call_info.get('conference', {})
+            conference_name = call_conference_info.get('conference_name', None)
+            conference_info = redis.get(conference_name, {})
             stream_audio = str2bool(call_info.get('stream_audio', False))
+            kick_participant_from_conference = str2bool(call_conference_info.get('kick_participant_from_conference', False))
+            update_participant_in_conference = str2bool(call_conference_info.get('update_participant_in_conference', False))
+            current_app.logger.info("*************** Call Events Handler ********************")
+            current_app.logger.info(redis)
+            current_app.logger.info(call_info)
+            current_app.logger.info(call_conference_info)
+            current_app.logger.info(conference_name)
+            current_app.logger.info(conference_info)
+            current_app.logger.info(kick_participant_from_conference)
+            current_app.logger.info(stream_audio)
+            current_app.logger.info(update_participant_in_conference)
+            current_app.logger.info("*************** Call Events Handler ********************")
+
+            if update_participant_in_conference:
+                conference_info['participants'][sid] = {
+                    'participant_label': call_info.get('participant_label', None),
+                    'call_sid': sid,
+                    'muted': False,
+                    'on_hold': False,
+                    'role': call_info.get('role', None),
+                }
+
+            if kick_participant_from_conference:
+                all_calls = conference_info["calls"]
+                for call_sid, call_info in all_calls.items():
+                   if call_info.get('role') == 'ai-voice-agent':
+                       client = current_app.config['twilio_client']
+                       client.conferences(conference_info["conference_sid"]).participants(call_sid).delete()
+                       current_app.logger.info("🎤 Kicked participant %s from conference %s", call_info["call_tag"], conference_info["conference_name"])
             if stream_audio:
                 participant_label = redis[sid]['participant_label']
                 client = current_app.config['twilio_client']

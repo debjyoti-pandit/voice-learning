@@ -79,22 +79,32 @@ class ConferenceEventsHandler:
             if leave_sid in participants:
                 participants[leave_sid]["left"] = True
         try:
+
+
             role = redis[friendly_name]['calls'][call_sid]['role']
             current_app.logger.debug("🎤 role: %s", role)
-            if  event_type == "participant-hold" and role == "customer":
-                add_to_conference = redis[friendly_name]['calls'][call_sid]['add_to_conference']
-                if add_to_conference:
-                    participant_role = redis[friendly_name]['calls'][call_sid]['participant_role']
-                    identity = redis[friendly_name]['calls'][call_sid]['participant_identity']
-                    current_app.logger.debug("🎤 Adding participant %s to conference %s", participant_label, add_to_conference)
-                    client = current_app.config['twilio_client']
-                    app = current_app._get_current_object()
+            if  event_type == "participant-hold":
+                call_info = redis[friendly_name]['calls'].get(call_sid, {})
+                stream_audio_flag = str2bool(call_info.get('stream_audio', False))
+                if stream_audio_flag:
+                    try:
+                        client.calls(call_sid).streams(participant_label).update(status="stopped")
+                    except Exception as e:
+                        current_app.logger.error(f"No stream to stop on {call_sid} leg: {e}")
+                if role == "customer":
+                    add_to_conference = redis[friendly_name]['calls'][call_sid]['add_to_conference']
+                    if add_to_conference:
+                        participant_role = redis[friendly_name]['calls'][call_sid]['participant_role']
+                        identity = redis[friendly_name]['calls'][call_sid]['participant_identity']
+                        current_app.logger.debug("🎤 Adding participant %s to conference %s", participant_label, add_to_conference)
+                        client = current_app.config['twilio_client']
+                        app = current_app._get_current_object()
 
-                    threading.Thread(
-                        target=self._add_participant_to_conference,
-                        args=(client, conference_sid, friendly_name, app, add_to_conference, participant_role, identity, True),
-                        daemon=True
-                    ).start()
+                        threading.Thread(
+                            target=self._add_participant_to_conference,
+                            args=(client, conference_sid, friendly_name, app, add_to_conference, participant_role, identity, True),
+                            daemon=True
+                        ).start()
             if event_type == "participant-join":
                 call_info = redis[friendly_name]['calls'].get(call_sid, {})
                 hold_on_conference_join = str2bool(call_info.get('hold_on_conference_join', False))
@@ -298,14 +308,6 @@ class ConferenceEventsHandler:
                 "play_temporary_greeting_to_participant": True if participant_role == "agent" else False,
             }
 
-            redis[friendly_name]['participants'][call_sid] = {
-                'participant_label': participant_label,
-                'call_sid': call_sid,
-                'muted': False,
-                'on_hold': False,
-                'role': participant_role,
-            }
-
             redis[call_sid] = {
                 "stream_audio": stream_audio,
                 'participant_label': participant_label,
@@ -319,6 +321,8 @@ class ConferenceEventsHandler:
                     "role": participant_role,
                     "start_conference_on_enter": False,
                     "end_conference_on_exit": False,
+                    "kick_participant_from_conference": True,
+                    "update_participant_in_conference": True,
                 }
             }
 
