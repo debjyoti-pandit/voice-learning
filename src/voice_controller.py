@@ -68,6 +68,7 @@ def hangup_call():
     redis = current_app.config['redis']
     call_id = request.values.get('CallSid')
     current_app.logger.info("📞 hangup_call invoked", extra={"params": request.values.to_dict()})
+    current_app.logger.info("📞 hangup_call redis: %s", redis)
     if call_id in redis:
         redis_data = redis[call_id];
         if redis_data['child_call_moved_to_conference']:
@@ -80,6 +81,9 @@ def hangup_call():
             role = redis_data['conference']['role']
             identity = redis_data['identity']
             stream_audio = redis_data['stream_audio']
+            add_to_conference = redis_data['conference']['add_to_conference']
+            participant_role = redis_data['conference']['participant_role']
+            participant_identity = redis_data['conference']['participant_identity']
 
             client = current_app.config['twilio_client']
             current_app.logger.debug("📞 Updating parent call %s to join conference %s", call_id, conference_name)
@@ -92,7 +96,11 @@ def hangup_call():
                             mute=mute, 
                             role=role, 
                             identity=identity, 
-                            stream_audio=stream_audio),
+                            stream_audio=stream_audio,
+                            hold_on_conference_join=on_hold,
+                            add_to_conference=add_to_conference,
+                            participant_role=participant_role,
+                            participant_identity=participant_identity), 
                 method='POST',
             )
             current_app.logger.debug("📞 Parent call %s joined conference %s update completed", call_id, conference_name)

@@ -34,6 +34,10 @@ def join_conference():
     muted = str2bool(request.args.get('mute'), False)
     participant_label = request.args.get('participant_label', 'DefaultParticipant')
     stream_audio = str2bool(request.args.get('stream_audio'), False)
+    hold_on_conference_join = str2bool(request.args.get('hold_on_conference_join'), False)
+    play_temporary_greeting = str2bool(request.args.get('play_temporary_greeting'), False)
+    add_to_conference = request.args.get('add_to_conference', None)
+    participant_role = request.args.get('participant_role', None)
 
     response = VoiceResponse()
 
@@ -45,6 +49,14 @@ def join_conference():
             params.append(f"identity={caller_identity}")
         if stream_audio:
             params.append("stream_audio=true")
+        if hold_on_conference_join:
+            params.append("hold_on_conference_join=true")
+        if play_temporary_greeting:
+            params.append("play_temporary_greeting=true")
+        if add_to_conference:
+            params.append(f"add_to_conference={add_to_conference}")
+        if participant_role:
+            params.append(f"participant_role={participant_role}")
         return f"{base}?{'&'.join(params)}" if params else base
 
     dial = response.dial()
@@ -55,6 +67,7 @@ def join_conference():
         start_conference_on_enter=start_conference_on_enter,
         end_conference_on_exit=end_conference_on_exit,
         muted=muted,
+        beep=False,
         participant_label=participant_label,
         record='record-from-start',
         status_callback=sc_url(),

@@ -101,15 +101,20 @@ def warm_transfer():
         end_conference_on_exit[parent_call_sid] = True
         start_conference_on_enter[child_call_sid] = False
         end_conference_on_exit[child_call_sid] = False
+        mute_on_conference_join[child_call_sid] = True # for aiva case it will be muted
+        mute_on_conference_join[parent_call_sid] = False
     elif parent_role == "agent":
         start_conference_on_enter[parent_call_sid] = False
         end_conference_on_exit[parent_call_sid] = False
+        mute_on_conference_join[parent_call_sid] = True
         if child_role == "customer":
             start_conference_on_enter[child_call_sid] = True
             end_conference_on_exit[child_call_sid] = True
+            mute_on_conference_join[child_call_sid] = False # agent to customer
         else:
             start_conference_on_enter[child_call_sid] = False
             end_conference_on_exit[child_call_sid] = False
+            mute_on_conference_join[child_call_sid] = True # agent to agent
         
     for sid_label, sid in {"parent": parent_call_sid, "child": child_call_sid}.items():
         try:
@@ -133,6 +138,9 @@ def warm_transfer():
                 "start_conference_on_enter": start_conference_on_enter[parent_call_sid],
                 "end_conference_on_exit": end_conference_on_exit[parent_call_sid],
                 "mute": mute_on_conference_join[parent_call_sid],
+                "add_to_conference": transfer_to,
+                "participant_role": parent_role,
+                "participant_identity": identity,
             },
         }
         redis[conference_name] = {
@@ -156,7 +164,17 @@ def warm_transfer():
         }
         
         client.calls(child_call_sid).update(
-            url=url_for('conference.join_conference', _external=True, conference_name=conference_name, participant_label=child_name, start_conference_on_enter=start_conference_on_enter[child_call_sid], end_conference_on_exit=end_conference_on_exit[child_call_sid], role=child_role, identity=identity, stream_audio=True),
+            url=url_for('conference.join_conference', 
+                        _external=True, 
+                        conference_name=conference_name, 
+                        participant_label=child_name, 
+                        start_conference_on_enter=start_conference_on_enter[child_call_sid], 
+                        end_conference_on_exit=end_conference_on_exit[child_call_sid], 
+                        role=child_role, identity=identity, 
+                        stream_audio=False, 
+                        mute=True,
+                        hold_on_conference_join=hold_on_conference_join[child_call_sid]
+                        ),
             method='POST',
         )
         redis[conference_name]['participants'][child_call_sid] = {
@@ -167,98 +185,13 @@ def warm_transfer():
             'role': child_role,
         }
         current_app.logger.debug("🔀 Child call %s joined conference %s", child_call_sid, conference_name)
-
-        add_participant_to_conference(conference_name, transfer_to, identity, role=parent_role)
+        # add_participant_to_conference(conference_name, transfer_to, identity, role=parent_role)
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
     current_app.logger.info("🔀 warm_transfer processing complete")
     return jsonify({'message': 'both legs in conference'}), 200
-
-
-def add_participant_to_conference(conference_name, phone_number, identity=None, role="agent",start_conference_on_enter=True, end_conference_on_exit=False, mute=False):
-    current_app.logger.debug("🔀 Adding participant to conference %s: phone=%s identity=%s", conference_name, phone_number, identity)
-    client = current_app.config['twilio_client']
-
-    participant_label = phone_number[7:] if phone_number.startswith("client:") else phone_number
-    participant_identity = participant_label if phone_number.startswith("client:") else None
-    current_app.logger.debug("Participant identity=%s label=%s", participant_identity, participant_label)
-  
-
-    to_is_client = phone_number.startswith("client:")
-
-    if to_is_client:
-        import re
-        slug = re.sub(r"[^A-Za-z0-9_\-]", "-", conference_name)[:80]  # keep short
-        caller_id = f"client:conference-of-{slug}"
-    else:
-        caller_id = current_app.config.get("TWILIO_CALLER_ID") or os.getenv("CALLER_ID")
-
-    # ------------------------------------------------------------------
-    # Configure a status callback so that we receive call-level events
-    # (initiated, ringing, answered, completed) for this participant leg.
-    # These events are handled by ``/call-events`` and propagated to the
-    # browser via Socket.IO, enabling the UI to reflect real-time call
-    # progress such as *ringing* – which is missing when no callback is
-    # specified.
-    # ------------------------------------------------------------------
-
-    def _status_callback_url():
-        """Return the absolute URL for the call status callback, including
-        the identity query parameter when available so that the handler can
-        emit Socket.IO events to the correct room."""
-
-        base = url_for('events.call_events', _external=True)
-        return f"{base}?identity={identity}" if identity else base
-
-    call = client.calls.create(
-        to=phone_number,
-        from_=caller_id,
-        url=url_for(
-            'conference.join_conference',
-            conference_name=conference_name,
-            participant_label=participant_label,
-            role="agent",
-            start_conference_on_enter=start_conference_on_enter,
-            end_conference_on_exit=end_conference_on_exit,
-            stream_audio=True,
-            mute=mute,
-            identity=participant_identity,
-            _external=True
-        ),
-        method='POST',
-        status_callback=_status_callback_url(),
-        status_callback_method='GET',
-        status_callback_event=['initiated', 'ringing', 'answered', 'completed'],
-    )
-
-    redis = current_app.config['redis']
-
-    if conference_name not in redis:
-        redis[conference_name] = {
-            "created_by": identity,
-            "calls": {},
-            "participants": {},
-        }
-
-    redis[conference_name]["calls"][call.sid] = {
-        "call_tag": participant_label,
-        "role": role,
-        "hold_on_conference_join": False,
-    }
-
-    redis[conference_name]['participants'][call.sid] = {
-        'participant_label': participant_label,
-        'call_sid': call.sid,
-        'muted': mute,
-        'on_hold': False,
-        'role': role,
-        "play_temporary_greeting": True if role == "customer" else False,
-    }
-
-    return call.sid
-
 
 @transfer_bp.route('/unhold-call', methods=['POST'])
 def unhold_call():
