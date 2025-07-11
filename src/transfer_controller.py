@@ -116,7 +116,7 @@ def warm_transfer():
             end_conference_on_exit[child_call_sid] = False
             mute_on_conference_join[child_call_sid] = True # agent to agent
         
-    for sid_label, sid in {"parent": parent_call_sid, "child": child_call_sid}.items():
+    for sid_label, sid in {"parent": parent_call_sid}.items():
         try:
             client.calls(sid).streams("initial_call_recording").update(status="stopped")
         except Exception as e:

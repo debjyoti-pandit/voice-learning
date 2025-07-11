@@ -112,6 +112,23 @@ class ConferenceEventsHandler:
                 stream_audio_flag = str2bool(call_info.get('stream_audio', False))
                 current_app.logger.debug("🎤 hold_on_conference_join: %s for call_sid: %s", hold_on_conference_join, call_sid)
                 current_app.logger.debug("🎤 play_temporary_greeting: %s for call_sid: %s", play_temporary_greeting, call_sid)
+                current_app.logger.debug("🎤 stream_audio_flag: %s for call_sid: %s", stream_audio_flag, call_sid)
+
+                if role == "agent":
+                    add_to_conference = redis[friendly_name]['calls'][call_sid]['add_to_conference']
+                    if add_to_conference:
+                        participant_role = redis[friendly_name]['calls'][call_sid]['participant_role']
+                        identity = redis[friendly_name]['calls'][call_sid]['participant_identity']
+                        current_app.logger.debug("🎤 Adding participant %s to conference %s", participant_label, add_to_conference)
+                        client = current_app.config['twilio_client']
+                        app = current_app._get_current_object()
+
+                        threading.Thread(
+                            target=self._add_participant_to_conference,
+                            args=(client, conference_sid, friendly_name, app, add_to_conference, participant_role, identity, True),
+                            daemon=True
+                        ).start()
+
                 if hold_on_conference_join:
                     current_app.logger.debug("🎤 Placing participant %s on hold (call_sid=%s)", redis[friendly_name]['calls'][call_sid]['call_tag'], call_sid)
                     client = current_app.config['twilio_client']
@@ -283,7 +300,7 @@ class ConferenceEventsHandler:
                 from_=caller_id,
                 early_media=True,
                 end_conference_on_exit=False,
-                muted=False,
+                muted=True,
                 label=participant_label,
                 conference_status_callback_method='POST',
                 conference_status_callback_event='start end join leave hold mute',
