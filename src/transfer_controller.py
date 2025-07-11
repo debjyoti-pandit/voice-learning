@@ -139,8 +139,8 @@ def warm_transfer():
                 "end_conference_on_exit": end_conference_on_exit[parent_call_sid],
                 "mute": mute_on_conference_join[parent_call_sid],
                 "add_to_conference": transfer_to,
-                "participant_role": parent_role,
-                "participant_identity": identity,
+                "participant_role": "agent",
+                "participant_identity":  transfer_to[7:] if transfer_to.startswith("client:") else transfer_to,
             },
         }
         redis[conference_name] = {
@@ -148,6 +148,9 @@ def warm_transfer():
             "created": False,
             "calls": {
                parent_call_sid: {
+                   "add_to_conference": transfer_to,
+                   "participant_role": "agent",
+                   "participant_identity": identity, # transfer_to[7:] if transfer_to.startswith("client:") else transfer_to,                
                    "call_tag": parent_name,
                    "hold_on_conference_join": hold_on_conference_join[parent_call_sid],
                    "initial_call_recording_sid": get_value(recordings, parent_call_sid),
@@ -162,6 +165,9 @@ def warm_transfer():
             },
             "participants": {}
         }
+        print("************************************************")
+        print("redis: %s", redis)
+        print("************************************************")
         
         client.calls(child_call_sid).update(
             url=url_for('conference.join_conference', 
@@ -173,7 +179,6 @@ def warm_transfer():
                         role=child_role, identity=identity, 
                         stream_audio=False, 
                         mute=True,
-                        hold_on_conference_join=hold_on_conference_join[child_call_sid]
                         ),
             method='POST',
         )
@@ -181,11 +186,10 @@ def warm_transfer():
             'participant_label': child_name,
             'call_sid': child_call_sid,
             'muted': mute_on_conference_join[child_call_sid],
-            'on_hold': hold_on_conference_join[child_call_sid],
+            'on_hold': False,
             'role': child_role,
         }
         current_app.logger.debug("🔀 Child call %s joined conference %s", child_call_sid, conference_name)
-        # add_participant_to_conference(conference_name, transfer_to, identity, role=parent_role)
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500

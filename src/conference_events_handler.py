@@ -24,8 +24,6 @@ class ConferenceEventsHandler:
         # Build a concise contextual message for quick readability
         event_type_preview = values.get("StatusCallbackEvent")
         stream_audio_flag = str2bool(values.get('stream_audio'))
-        hold_on_conference_join = str2bool(values.get('hold_on_conference_join'))
-        play_temporary_greeting = str2bool(values.get('play_temporary_greeting'))
 
         conference_name_preview = values.get("FriendlyName")
         current_app.logger.info(
@@ -83,21 +81,28 @@ class ConferenceEventsHandler:
             if leave_sid in participants:
                 participants[leave_sid]["left"] = True
         try:
-            if  event_type == "participant-hold":
-                    add_to_conference = values.get('add_to_conference')
-                    if add_to_conference:
-                        participant_role = values.get('participant_role')
-                        identity = values.get('participant_identity')
-                        current_app.logger.debug("🎤 Adding participant %s to conference %s", participant_label, add_to_conference)
-                        client = current_app.config['twilio_client']
-                        app = current_app._get_current_object()
+            role = redis[friendly_name]['calls'][call_sid]['role']
+            current_app.logger.debug("🎤 role: %s", role)
+            if  event_type == "participant-hold" and role == "customer":
+                add_to_conference = redis[friendly_name]['calls'][call_sid]['add_to_conference']
+                if add_to_conference:
+                    participant_role = redis[friendly_name]['calls'][call_sid]['participant_role']
+                    identity = redis[friendly_name]['calls'][call_sid]['participant_identity']
+                    current_app.logger.debug("🎤 Adding participant %s to conference %s", participant_label, add_to_conference)
+                    client = current_app.config['twilio_client']
+                    app = current_app._get_current_object()
 
-                        threading.Thread(
-                            target=self._add_participant_to_conference,
-                            args=(client, conference_sid, friendly_name, app, add_to_conference, participant_role, identity, True, True),
-                            daemon=True
-                        ).start()
+                    threading.Thread(
+                        target=self._add_participant_to_conference,
+                        args=(client, conference_sid, friendly_name, app, add_to_conference, participant_role, identity, True, True),
+                        daemon=True
+                    ).start()
             if event_type == "participant-join":
+                call_info = redis[friendly_name]['calls'].get(call_sid, {})
+                hold_on_conference_join = str2bool(call_info.get('hold_on_conference_join', False))
+                play_temporary_greeting = str2bool(call_info.get('play_temporary_greeting_to_participant', False))
+                current_app.logger.debug("🎤 hold_on_conference_join: %s for call_sid: %s", hold_on_conference_join, call_sid)
+                current_app.logger.debug("🎤 play_temporary_greeting: %s for call_sid: %s", play_temporary_greeting, call_sid)
                 if hold_on_conference_join:
                     current_app.logger.debug("🎤 Placing participant %s on hold (call_sid=%s)", redis[friendly_name]['calls'][call_sid]['call_tag'], call_sid)
                     client = current_app.config['twilio_client']
@@ -260,17 +265,6 @@ class ConferenceEventsHandler:
             if stream_audio:
                 params.append("stream_audio=true")
             return f"{base}?{'&'.join(params)}" if params else base
-    
-        def _conference_status_callback_url():
-            base = url_for('conference.conference_events', _external=True)
-            params = []
-            if identity:
-                params.append(f"identity={identity}")
-            if play_temporary_greeting:
-                params.append("play_temporary_greeting=true")
-            if participant_role:
-                params.append(f"participant_role={participant_role}")
-            return f"{base}?{'&'.join(params)}" if params else base
 
         with app.app_context():
             current_app.logger.debug("🔀 Adding participant to conference %s: phone=%s identity=%s", conference_sid, add_to_conference, identity)
@@ -281,12 +275,12 @@ class ConferenceEventsHandler:
                 early_media=True,
                 end_conference_on_exit=False,
                 muted=False,
+                label=participant_label,
                 conference_status_callback_method='POST',
                 conference_status_callback_event='start end join leave hold mute',
-                conference_status_callback=_conference_status_callback_url(),
                 status_callback=_status_callback_url(),
                 status_callback_method='GET',
-                status_callback_event='initiated ringing answered completed',
+                status_callback_event=['initiated', 'ringing', 'answered', 'completed'],
             )
             call_sid = call.call_sid
 
@@ -302,6 +296,7 @@ class ConferenceEventsHandler:
                 "call_tag": participant_label,
                 "role": participant_role,
                 "hold_on_conference_join": False,
+                "play_temporary_greeting_to_participant": True if participant_role == "agent" else False,
             }
 
             redis[friendly_name]['participants'][call_sid] = {
@@ -310,6 +305,5 @@ class ConferenceEventsHandler:
                 'muted': False,
                 'on_hold': False,
                 'role': participant_role,
-                "play_temporary_greeting": True if participant_role == "customer" else False,
             }
 
