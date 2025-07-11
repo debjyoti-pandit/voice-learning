@@ -1,5 +1,6 @@
-from dotenv import load_dotenv
 import os
+
+from dotenv import load_dotenv
 
 # Load environment variables from a .env file if present
 load_dotenv()
@@ -21,8 +22,8 @@ CLIENT_NUMBER: str = f"client:{NAME}"
 SERVER_DOMAIN: str = f"{NAME}-voice-learning.ngrok-free.app"
 
 __all__ = [
-    "NAME",
-    "DEFAULT_IDENTITY",
     "CLIENT_NUMBER",
+    "DEFAULT_IDENTITY",
+    "NAME",
     "SERVER_DOMAIN",
 ]

@@ -20,7 +20,10 @@ def strip_python_comments(path: pathlib.Path) -> None:
 
 
 def strip_html_comments(path: pathlib.Path) -> None:
-    """Overwrite an HTML file with all <!-- ... --> blocks removed (multi-line safe)."""
+    """Overwrite an HTML file with all <!-- ...
+
+    --> blocks removed (multi-line safe).
+    """
     source = path.read_text()
     cleaned = re.sub(r"<!--.*?-->", "", source, flags=re.DOTALL)
     path.write_text(normalize_whitespace(cleaned))
@@ -41,9 +44,10 @@ def main() -> None:
 # Helper --------------------------------------------------------------
 def normalize_whitespace(text: str) -> str:
     """Return *text* with trailing spaces removed and consecutive blank lines
-    collapsed to a single blank line. Ensures the final string ends with a
-    newline when non-empty."""
+    collapsed to a single blank line.
 
+    Ensures the final string ends with a newline when non-empty.
+    """
     # Strip trailing whitespace from each line
     lines = [line.rstrip() for line in text.splitlines()]
 
@@ -64,4 +68,4 @@ def normalize_whitespace(text: str) -> str:
 
 
 if __name__ == "__main__":
-    main() 
+    main()
