@@ -169,10 +169,20 @@
     <script src="https://sdk.twilio.com/js/client/v1.13/twilio.min.js"></script>
     <script>
       const urlParams = new URLSearchParams(window.location.search);
+
+      // Generate a random 8-character identity using both lowercase and uppercase letters
+      function generateRandomIdentity() {
+        const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        return Array.from({ length: 8 }, () =>
+          chars.charAt(Math.floor(Math.random() * chars.length))
+        ).join("");
+      }
+      const defaultIdentity = generateRandomIdentity();
+
       let myIdentity =
         urlParams.get("identity") ||
-        prompt("Enter your identity", "{{ default_name }}") ||
-        "{{ default_name }}";
+        prompt("Enter your identity", defaultIdentity) ||
+        defaultIdentity;
       const socket = io({ query: { identity: myIdentity } }); // Connect to Flask-SocketIO with identity
       const logEl = document.getElementById("log");
       const callButton = document.getElementById("call-button");
@@ -187,6 +197,14 @@
       let myRole = roleSelect.value;
       roleSelect.addEventListener("change", () => {
         myRole = roleSelect.value;
+
+        // When switching to customer role, automatically select the AIVA number
+        if (myRole === "customer") {
+          const aivaEntry = phoneNumbers.find((entry) => entry.name === "AIVA");
+          if (aivaEntry) {
+            phoneInput.value = aivaEntry.number;
+          }
+        }
 
         // Mark dropdown stale so it refreshes with role-specific visibility rules
         customDropdown.dataset.dirty = "true";
@@ -221,6 +239,9 @@
 
         logEl.appendChild(div);
       };
+
+      // Immediately log the chosen identity
+      appendLog(`🆔 Your identity is: ${myIdentity}`);
 
       async function initDialer() {
         try {
@@ -694,7 +715,7 @@
         },
         {
           name: "New Dialer",
-          number: "client:{{ default_name }}",
+          number: `client:${myIdentity}`,
         },
       ];
 
