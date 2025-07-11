@@ -73,7 +73,7 @@ class CallEventsHandler:
                 conference_info['participants'][sid] = {
                     'participant_label': call_info.get('participant_label', None),
                     'call_sid': sid,
-                    'muted': False,
+                    'muted': True,
                     'on_hold': False,
                     'role': call_info.get('role', None),
                 }

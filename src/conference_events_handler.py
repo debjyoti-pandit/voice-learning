@@ -115,7 +115,8 @@ class ConferenceEventsHandler:
                 current_app.logger.debug("🎤 stream_audio_flag: %s for call_sid: %s", stream_audio_flag, call_sid)
 
                 if role == "agent":
-                    add_to_conference = redis[friendly_name]['calls'][call_sid]['add_to_conference']
+                    call_info = redis[friendly_name]['calls'].get(call_sid, {})
+                    add_to_conference = str2bool(call_info.get('add_to_conference', False))
                     if add_to_conference:
                         participant_role = redis[friendly_name]['calls'][call_sid]['participant_role']
                         identity = redis[friendly_name]['calls'][call_sid]['participant_identity']
@@ -340,7 +341,7 @@ class ConferenceEventsHandler:
             redis[call_sid] = {
                 "stream_audio": stream_audio,
                 'participant_label': participant_label,
-                'muted': False,
+                'muted': True,
                 'on_hold': False,
                 'role': participant_role,
                 "conference": {
