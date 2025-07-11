@@ -1,6 +1,15 @@
+import os
+import threading
 import time
 from flask_socketio import SocketIO
 from flask import current_app
+
+def str2bool(val, default=False):
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.lower() in ('true', '1', 'yes')
+    return default
 
 class CallEventsHandler:
     """Encapsulates the business logic for processing Twilio call-event webhooks."""
@@ -21,7 +30,7 @@ class CallEventsHandler:
         timestamp = time.time()
         duration = flask_request.values.get('CallDuration')
 
-        current_app.logger.debug("📞 Parsed params: identity=%s sid=%s parent_sid=%s status=%s", identity, sid, parent_sid, status)
+        current_app.logger.debug("📞 Parsed params: from_number=%s to_number=%s status=%s", from_number, to_number, status)
 
         call_type = 'child' if parent_sid else 'parent'
 
@@ -39,7 +48,20 @@ class CallEventsHandler:
 
         if status == 'ringing':
             self.call_log[log_key]['ringing_time'] = timestamp
-        elif status == 'answered':
+        elif status == 'in-progress':
+            redis = current_app.config['redis']
+            call_info = redis.get(sid, {})
+            stream_audio = str2bool(call_info.get('stream_audio', False))
+            if stream_audio:
+                participant_label = redis[sid]['participant_label']
+                client = current_app.config['twilio_client']
+                app = current_app._get_current_object()
+
+                threading.Thread(
+                    target=self._start_media_stream,
+                    args=(client, sid, participant_label, app),
+                    daemon=True
+                ).start()
             self.call_log[log_key]['answered_time'] = timestamp
         elif status in ['completed', 'no-answer', 'busy', 'failed']:
             self.call_log[log_key]['end_time'] = timestamp
@@ -50,6 +72,38 @@ class CallEventsHandler:
 
         current_app.logger.info("📞 call_events_handler processing complete for call_sid: %s (status: %s)", sid, status)
         return '', 204
+    
+    def _start_media_stream(self, client, call_sid, participant_label, app):
+        """Start a Media Stream on the specified call so audio is sent to the websocket."""
+        with app.app_context():
+            current_app.logger.info("*************** Call Events Handler ********************")
+            current_app.logger.info("🎤 Starting media stream for %s", call_sid)
+            stream_url = os.getenv('TRANSCRIPTION_WEBSOCKET_URL')
+            if not stream_url:
+                current_app.logger.warning("TRANSCRIPTION_WEBSOCKET_URL not set; skipping media stream start")
+                return
+
+            for attempt in range(3):
+                try:
+                    client.calls(call_sid).streams.create(
+                        url=stream_url,
+                        track='both_tracks',
+                        name=participant_label,
+                        **{
+                            'parameter1_name': 'call_flow_type',
+                            'parameter1_value': 'conference',
+                            'parameter2_name': 'track0_label',
+                            'parameter2_value': 'conference',
+                            'parameter3_name': 'track1_label',
+                            'parameter3_value': participant_label,
+                        }
+                    )
+                    current_app.logger.debug("🎤 Successfully started media stream for %s (attempt %s)", call_sid, attempt + 1)
+                    break
+                except Exception as e:
+                    current_app.logger.warning("Retry %s/3 - Failed to start media stream for %s: %s", attempt + 1, call_sid, e)
+                    time.sleep(1)
+
 
     def _emit_parent_child_sids(self, call_type: str, sid: str, parent_sid: str | None, identity: str | None):
 

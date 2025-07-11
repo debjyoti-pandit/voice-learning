@@ -23,8 +23,6 @@ class ConferenceEventsHandler:
 
         # Build a concise contextual message for quick readability
         event_type_preview = values.get("StatusCallbackEvent")
-        stream_audio_flag = str2bool(values.get('stream_audio'))
-
         conference_name_preview = values.get("FriendlyName")
         current_app.logger.info(
             "🎤 conference_events_handler %s for conference %s",
@@ -94,13 +92,14 @@ class ConferenceEventsHandler:
 
                     threading.Thread(
                         target=self._add_participant_to_conference,
-                        args=(client, conference_sid, friendly_name, app, add_to_conference, participant_role, identity, True, True),
+                        args=(client, conference_sid, friendly_name, app, add_to_conference, participant_role, identity, True),
                         daemon=True
                     ).start()
             if event_type == "participant-join":
                 call_info = redis[friendly_name]['calls'].get(call_sid, {})
                 hold_on_conference_join = str2bool(call_info.get('hold_on_conference_join', False))
                 play_temporary_greeting = str2bool(call_info.get('play_temporary_greeting_to_participant', False))
+                stream_audio_flag = str2bool(call_info.get('stream_audio', False))
                 current_app.logger.debug("🎤 hold_on_conference_join: %s for call_sid: %s", hold_on_conference_join, call_sid)
                 current_app.logger.debug("🎤 play_temporary_greeting: %s for call_sid: %s", play_temporary_greeting, call_sid)
                 if hold_on_conference_join:
@@ -217,7 +216,7 @@ class ConferenceEventsHandler:
     def _start_media_stream(self, client, call_sid, participant_label, app):
         """Start a Media Stream on the specified call so audio is sent to the websocket."""
         with app.app_context():
-            current_app.logger.info("************************************************")
+            current_app.logger.info("*********** Conference Events Handler **************")
             current_app.logger.info("🎤 Starting media stream for %s", call_sid)
             stream_url = os.getenv('TRANSCRIPTION_WEBSOCKET_URL')
             if not stream_url:
@@ -245,7 +244,7 @@ class ConferenceEventsHandler:
                     current_app.logger.warning("Retry %s/3 - Failed to start media stream for %s: %s", attempt + 1, call_sid, e)
                     time.sleep(1)
 
-    def _add_participant_to_conference(self, client, conference_sid, friendly_name, app, add_to_conference, participant_role, identity, stream_audio, play_temporary_greeting):
+    def _add_participant_to_conference(self, client, conference_sid, friendly_name, app, add_to_conference, participant_role, identity, stream_audio):
         participant_label = add_to_conference[7:] if add_to_conference.startswith("client:") else add_to_conference
         participant_identity = participant_label if add_to_conference.startswith("client:") else None
 
@@ -305,5 +304,21 @@ class ConferenceEventsHandler:
                 'muted': False,
                 'on_hold': False,
                 'role': participant_role,
+            }
+
+            redis[call_sid] = {
+                "stream_audio": stream_audio,
+                'participant_label': participant_label,
+                'muted': False,
+                'on_hold': False,
+                'role': participant_role,
+                "conference": {
+                    "conference_sid": conference_sid,
+                    "conference_name": friendly_name,
+                    "on_hold": False,
+                    "role": participant_role,
+                    "start_conference_on_enter": False,
+                    "end_conference_on_exit": False,
+                }
             }
 

@@ -76,11 +76,9 @@ def hangup_call():
             participant_label = redis_data['participant_label']
             start_conference_on_enter = redis_data['conference']['start_conference_on_enter']
             end_conference_on_exit = redis_data['conference']['end_conference_on_exit']
-            on_hold = redis_data['conference']['on_hold']
             mute = redis_data['conference']['mute']
             role = redis_data['conference']['role']
             identity = redis_data['identity']
-            stream_audio = redis_data['stream_audio']
 
             client = current_app.config['twilio_client']
             current_app.logger.debug("📞 Updating parent call %s to join conference %s", call_id, conference_name)
@@ -92,20 +90,10 @@ def hangup_call():
                             end_conference_on_exit=end_conference_on_exit, 
                             mute=mute, 
                             role=role, 
-                            identity=identity, 
-                            stream_audio=stream_audio,
-                            hold_on_conference_join=on_hold), 
+                            identity=identity), 
                 method='POST',
             )
             current_app.logger.debug("📞 Parent call %s joined conference %s update completed", call_id, conference_name)
-
-            redis[conference_name]['participants'][call_id] = {
-                'participant_label': participant_label,
-                'call_sid': call_id,
-                'muted': mute,
-                'on_hold': on_hold,
-                'role': role,
-            }
             # Respond with an empty TwiML document to acknowledge the request.
             empty_resp = VoiceResponse()
             return xml_response(empty_resp)

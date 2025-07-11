@@ -155,12 +155,14 @@ def warm_transfer():
                    "hold_on_conference_join": hold_on_conference_join[parent_call_sid],
                    "initial_call_recording_sid": get_value(recordings, parent_call_sid),
                    "role": parent_role,
+                   "stream_audio": True,
                },
                child_call_sid: {
                    "call_tag": child_name,
                    "hold_on_conference_join": hold_on_conference_join[child_call_sid],
                    "initial_call_recording_sid": get_value(recordings, child_call_sid),
                    "role": child_role,
+                   "stream_audio": True,
                }
             },
             "participants": {}
@@ -176,8 +178,7 @@ def warm_transfer():
                         participant_label=child_name, 
                         start_conference_on_enter=start_conference_on_enter[child_call_sid], 
                         end_conference_on_exit=end_conference_on_exit[child_call_sid], 
-                        role=child_role, identity=identity, 
-                        stream_audio=False, 
+                        role=child_role, identity=identity,
                         mute=True,
                         ),
             method='POST',
@@ -186,8 +187,16 @@ def warm_transfer():
             'participant_label': child_name,
             'call_sid': child_call_sid,
             'muted': mute_on_conference_join[child_call_sid],
-            'on_hold': False,
+            'on_hold': hold_on_conference_join[child_call_sid],
             'role': child_role,
+        }
+
+        redis[conference_name]['participants'][parent_call_sid] = {
+            'participant_label': parent_name,
+            'call_sid': parent_call_sid,
+            'muted': mute_on_conference_join[parent_call_sid],
+            'on_hold': hold_on_conference_join[parent_call_sid],
+            'role': parent_role,
         }
         current_app.logger.debug("🔀 Child call %s joined conference %s", child_call_sid, conference_name)
 
