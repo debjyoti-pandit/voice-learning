@@ -79,11 +79,9 @@ class ConferenceEventsHandler:
             if leave_sid in participants:
                 participants[leave_sid]["left"] = True
         try:
-
-
-            role = redis[friendly_name]['calls'][call_sid]['role']
-            current_app.logger.debug("🎤 role: %s", role)
             if  event_type == "participant-hold":
+                role = redis[friendly_name]['calls'][call_sid]['role']
+                current_app.logger.debug("🎤 role: %s", role)
                 call_info = redis[friendly_name]['calls'].get(call_sid, {})
                 stream_audio_flag = str2bool(call_info.get('stream_audio', False))
                 if stream_audio_flag:
@@ -106,6 +104,8 @@ class ConferenceEventsHandler:
                             daemon=True
                         ).start()
             if event_type == "participant-join":
+                role = redis[friendly_name]['calls'][call_sid]['role']
+                current_app.logger.debug("🎤 role: %s", role)
                 call_info = redis[friendly_name]['calls'].get(call_sid, {})
                 hold_on_conference_join = str2bool(call_info.get('hold_on_conference_join', False))
                 play_temporary_greeting = str2bool(call_info.get('play_temporary_greeting_to_participant', False))
@@ -125,7 +125,7 @@ class ConferenceEventsHandler:
 
                         threading.Thread(
                             target=self._add_participant_to_conference,
-                            args=(client, conference_sid, friendly_name, app, add_to_conference, participant_role, identity, True),
+                            args=(client, conference_sid, friendly_name, app, add_to_conference, participant_role, identity, True, False),
                             daemon=True
                         ).start()
 
@@ -164,7 +164,6 @@ class ConferenceEventsHandler:
                 
         except KeyError:
             current_app.logger.debug("Unhandled KeyError while processing event %s for call %s in conf %s", event_type, call_sid, friendly_name)
-            return "", 204
 
         current_app.logger.debug("Processed hold/announcement logic")
         call_sid = (
@@ -194,13 +193,26 @@ class ConferenceEventsHandler:
 
         current_app.logger.debug("Emit targets calculated: identity=%s participant_label=%s", identity, participant_label)
         current_app.logger.debug("Event data prepared: %s", event_data)
+
+        # Collect target Socket.IO rooms.
+        targets: set[str] = set()
         if identity:
-            if identity != participant_label:
-                current_app.logger.debug("Emitting conference_event to participant room: %s", participant_label)
-                self.socketio.emit("conference_event", event_data, room=participant_label)
-            current_app.logger.debug("Emitting conference_event to identity room: %s", identity)
-            self.socketio.emit("conference_event", event_data, room=identity)
+            targets.add(identity)
+        if participant_label and participant_label != identity:
+            targets.add(participant_label)
+
+        # Also include the agent that originally created the conference.
+        created_by = redis.get(friendly_name, {}).get("created_by")
+        if created_by:
+            targets.add(created_by)
+
+        # Emit to each distinct room so every agent sees up-to-date status.
+        if targets:
+            for room in targets:
+                current_app.logger.debug("Emitting conference_event to room: %s", room)
+                self.socketio.emit("conference_event", event_data, room=room)
         else:
+            # Fallback: broadcast globally if we somehow have no target rooms.
             self.socketio.emit("conference_event", event_data)
 
         current_app.logger.debug("🎤 Conference event emitted: %s", event_data)
@@ -271,7 +283,7 @@ class ConferenceEventsHandler:
                     current_app.logger.warning("Retry %s/3 - Failed to start media stream for %s: %s", attempt + 1, call_sid, e)
                     time.sleep(1)
 
-    def _add_participant_to_conference(self, client, conference_sid, friendly_name, app, add_to_conference, participant_role, identity, stream_audio):
+    def _add_participant_to_conference(self, client, conference_sid, friendly_name, app, add_to_conference, participant_role, identity, stream_audio, kick = True):
         participant_label = add_to_conference[7:] if add_to_conference.startswith("client:") else add_to_conference
         participant_identity = participant_label if add_to_conference.startswith("client:") else None
 
@@ -338,7 +350,7 @@ class ConferenceEventsHandler:
                     "role": participant_role,
                     "start_conference_on_enter": False,
                     "end_conference_on_exit": False,
-                    "kick_participant_from_conference": True,
+                    "kick_participant_from_conference": kick,
                     "update_participant_in_conference": True,
                 }
             }
