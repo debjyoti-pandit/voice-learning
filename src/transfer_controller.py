@@ -38,6 +38,85 @@ def warm_transfer():
     child_role = data.get("child_role")
     identity = data.get("identity")
     transfer_to = data.get("transfer_to")
+
+    # NEW: If **either** of the supplied legs is already part of a conference in
+    # Redis, just update that existing conference with the new participant to be
+    # added instead of building a brand-new conference. This supports payloads
+    # that contain only the parent leg, only the child leg, or both.
+
+    redis = current_app.config["redis"]
+
+    existing_conference_info = None
+    conference_name_existing = None
+
+    # Search for a conference attached to whichever SID(s) we received.
+    for sid in (parent_call_sid, child_call_sid):
+        if sid is None:
+            continue
+        entry = redis.get(sid)
+        if entry and entry.get("conference"):
+            existing_conference_info = entry["conference"]
+            conference_name_existing = existing_conference_info.get("conference_name")
+            break  # Found the conference we need to update.
+
+    if existing_conference_info and conference_name_existing:
+        # Use Twilio's Participant API to add the new party directly into the
+        # running conference.
+
+        conf_sid = None
+        for _ in range(5):
+            try:
+                conferences = client.conferences.list(
+                    friendly_name=conference_name_existing,
+                    status="in-progress",
+                    limit=1,
+                )
+                if conferences:
+                    conf_sid = conferences[0].sid
+                    break
+            except Exception as e:
+                current_app.logger.warning(
+                    "Error while searching for conference: %s. Retrying…", e
+                )
+            time.sleep(1)
+
+        if not conf_sid:
+            return (
+                jsonify({"error": "Conference not found or not in progress"}),
+                404,
+            )
+
+        try:
+            client = current_app.config["twilio_client"]
+            add_participant_to_conference(
+                client,
+                conf_sid,
+                conference_name_existing,
+                current_app,
+                transfer_to,
+                "agent",
+                identity,
+                True,
+                False,
+            )
+
+            current_app.logger.info(
+                "🔀 warm_transfer: added %s (Call SID: %s) to conference %s via Participant API",
+                transfer_to,
+                participant.call_sid,
+                conference_name_existing,
+            )
+        except Exception as e:
+            current_app.logger.error(
+                "🔀 warm_transfer: failed to add %s via Participant API – %s",
+                transfer_to,
+                e,
+            )
+            return jsonify({"error": f"Failed to add participant: {e}"}), 500
+
+        return jsonify({"message": "participant added to existing conference"}), 200
+    # END NEW LOGIC
+
     if not parent_role or not child_role:
         return jsonify({"error": "Missing role(s)"}), 400
     current_app.logger.debug(
@@ -308,3 +387,117 @@ def hold_music():
         loop=0,
     )
     return xml_response(response)
+
+def add_participant_to_conference(
+    client,
+    conference_sid,
+    friendly_name,
+    app,
+    add_to_conference,
+    participant_role,
+    identity,
+    stream_audio,
+    kick=True,
+):
+    participant_label = (
+        add_to_conference[7:]
+        if add_to_conference.startswith("client:")
+        else add_to_conference
+    )
+    participant_identity = (
+        participant_label
+        if add_to_conference.startswith("client:")
+        else None
+    )
+
+    to_is_client = add_to_conference.startswith("client:")
+    if to_is_client:
+        import re
+
+        slug = re.sub(r"[^A-Za-z0-9_\-]", "-", friendly_name)[
+            :80
+        ]  # keep short
+        caller_id = f"client:conference-of-{slug}"
+    else:
+        caller_id = current_app.config.get("TWILIO_CALLER_ID") or os.getenv(
+            "CALLER_ID"
+        )
+
+    def _status_callback_url():
+        base = url_for("events.call_events", _external=True)
+        params = []
+        if identity:
+            params.append(f"identity={identity}")
+        if stream_audio:
+            params.append("stream_audio=true")
+        return f"{base}?{'&'.join(params)}" if params else base
+
+    with app.app_context():
+        current_app.logger.debug(
+            "🔀 Adding participant to conference %s: phone=%s identity=%s",
+            conference_sid,
+            add_to_conference,
+            identity,
+        )
+        current_app.logger.debug(
+            "Participant identity=%s label=%s",
+            participant_identity,
+            participant_label,
+        )
+        call = client.conferences(conference_sid).participants.create(
+            to=add_to_conference,
+            from_=caller_id,
+            early_media=True,
+            end_conference_on_exit=False,
+            beep=False,
+            muted=True,
+            label=participant_label,
+            conference_status_callback_method="POST",
+            conference_status_callback_event="start end join leave hold mute",
+            status_callback=_status_callback_url(),
+            status_callback_method="GET",
+            status_callback_event=[
+                "initiated",
+                "ringing",
+                "answered",
+                "completed",
+            ],
+        )
+        call_sid = call.call_sid
+
+        redis = current_app.config["redis"]
+        if friendly_name not in redis:
+            redis[friendly_name] = {
+                "created_by": identity,
+                "calls": {},
+                "participants": {},
+            }
+
+        redis[friendly_name]["calls"][call_sid] = {
+            "call_tag": participant_label,
+            "role": participant_role,
+            "hold_on_conference_join": False,
+            "play_temporary_greeting_to_participant": (
+                True if participant_role == "agent" else False
+            ),
+        }
+
+        redis[call_sid] = {
+            "stream_audio": stream_audio,
+            "participant_label": participant_label,
+            "muted": True,
+            "on_hold": False,
+            "role": participant_role,
+            "conference": {
+                "conference_sid": conference_sid,
+                "conference_name": friendly_name,
+                "on_hold": False,
+                "role": participant_role,
+                "start_conference_on_enter": False,
+                "end_conference_on_exit": False,
+                "kick_participant_from_conference": kick,
+                "update_participant_in_conference": True,
+            },
+        }
+
+

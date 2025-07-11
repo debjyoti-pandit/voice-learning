@@ -217,11 +217,19 @@
       let onHold = false; // Track hold state
       let currentConferenceName = null;
       let myCallSid = null;
+      // When inside a conference, track a participant (non-agent) call SID to
+      // serve as the CHILD leg for subsequent warm-transfers.
+      let conferenceChildCallSid = null;
       let participantsInterval = null;
       let dialedTarget = null; // Last number/client dialed to infer roles
 
       // Will hold an incoming (ringing) Twilio.Connection until accepted / rejected.
       let incomingConnection = null;
+      let incomingFromConference = false; // Track whether the current incoming call is a conference invite
+      // If this dialer was *invited* into a conference (i.e.
+      // received an incoming call whose `From:` starts with "conference"),
+      // we flip this flag so later we can treat transfer behaviour differently.
+      let wasInvitedConferenceCall = false;
 
       const appendLog = (msg, type = null) => {
         const time = new Date().toLocaleTimeString();
@@ -295,12 +303,23 @@
             acceptButton.style.display = "none";
             acceptButton.classList.remove("jiggle");
             incomingConnection = null;
+            incomingFromConference = false; // Reset flag after call ends
+            wasInvitedConferenceCall = false;
             resetCallUI();
           });
           device.on("incoming", (conn) => {
             incomingConnection = conn;
 
             const fromParam = conn.parameters ? conn.parameters.From : null;
+            // Detect if this incoming call is a conference invite
+            incomingFromConference = !!(
+              fromParam &&
+              (fromParam.startsWith("conference") ||
+                fromParam.includes("conference-of-"))
+            );
+            if (incomingFromConference) {
+              wasInvitedConferenceCall = true;
+            }
             if (fromParam && fromParam.startsWith("conference")) {
               appendLog("📥 Incoming CONFERENCE invite.");
             } else {
@@ -322,6 +341,12 @@
             transferButton.disabled = true;
             unholdButton.disabled = true;
             hangupButton.disabled = false; // allow rejecting the call
+
+            // If the AGENT has just joined a conference call, immediately allow Hold & Transfer
+            if (myRole === "agent" && incomingFromConference) {
+              holdConfButton.disabled = false;
+              transferButton.disabled = !hasConnectedDialers();
+            }
           });
         } catch (err) {
           appendLog(`❌ Error initializing dialer: ${err.message}`);
@@ -383,6 +408,7 @@
           ringtone.currentTime = 0;
           acceptButton.style.display = "none";
           acceptButton.classList.remove("jiggle");
+          incomingFromConference = false; // Reset flag after call ends
         }
         showParticipantsSection(false);
         stopParticipantsPolling();
@@ -410,12 +436,48 @@
         unholdCall(parentCallSid);
       });
 
-      transferButton.addEventListener("click", () => {
-        if (!childCallSid || !parentCallSid) {
-          appendLog("⚠️ Child or Parent Call SID not yet available.");
-          return;
+      transferButton.addEventListener("click", async () => {
+        // Ensure we have the latest participant list and call SIDs
+        try {
+          await fetchAndRenderParticipants();
+        } catch (_) {
+          /* network errors ignored – we still attempt transfer */
         }
 
+        let effectiveParentSid;
+        let effectiveChildSid;
+
+        if (wasInvitedConferenceCall) {
+          // We’re inside a conference; use our own call SID as parent, and
+          // the cached non-agent participant SID as child.
+          effectiveParentSid = myCallSid;
+          effectiveChildSid = conferenceChildCallSid;
+
+          if (!effectiveParentSid || !effectiveChildSid) {
+            appendLog(
+              `⚠️ Missing SID(s) for transfer. parent=${
+                effectiveParentSid ?? "null"
+              }, child=${effectiveChildSid ?? "null"}`
+            );
+            return;
+          }
+        } else {
+          // Normal original flow – require both pre-captured SIDs.
+          if (!childCallSid || !parentCallSid) {
+            appendLog(
+              `⚠️ Missing SID(s) for transfer. parent=${
+                parentCallSid ?? "null"
+              }, child=${childCallSid ?? "null"}`
+            );
+            return;
+          }
+          effectiveParentSid = parentCallSid;
+          effectiveChildSid = childCallSid;
+        }
+
+        const parentTarget = `client:${myIdentity}`;
+
+        // Get the current list of other connected dialers (excluding ourselves)
         const dialers = getConnectedDialers();
         if (dialers.length === 0) {
           appendLog("⚠️ No active dialers available for warm transfer.");
@@ -423,10 +485,21 @@
           return;
         }
 
-        const transferTo = dialers[0]; // pick the first available dialer for now
-        const parentTarget = `client:${myIdentity}`;
+        // Decide which index to pick: 0 for original leg, 1 for invited leg.
+        let targetIndex = wasInvitedConferenceCall ? 1 : 0;
+        // Fallback to the first available if chosen index is out of bounds.
+        if (targetIndex >= dialers.length) {
+          targetIndex = 0;
+        }
+        const transferTo = dialers[targetIndex];
+
         appendLog(`🔀 Initiating warm transfer to ${transferTo}...`);
-        warmTransfer(childCallSid, parentCallSid, parentTarget, transferTo);
+        warmTransfer(
+          effectiveChildSid,
+          effectiveParentSid,
+          parentTarget,
+          transferTo
+        );
       });
 
       socket.on("call_event", (event) => {
@@ -546,6 +619,18 @@
           // Only set myCallSid when the join event relates to **this** dialer.
           if (event.participant_label === myIdentity) {
             myCallSid = event.call_sid;
+            // Enable Hold / Transfer controls now that *this* dialer is inside the conference
+            if (myRole === "agent") {
+              holdConfButton.disabled = false;
+              transferButton.disabled = !hasConnectedDialers();
+            }
+          } else {
+            // A *new* participant joined (not me) – clear onHold state so we can transfer again
+            onHold = false;
+            if (myRole === "agent") {
+              transferButton.disabled = !hasConnectedDialers();
+              holdConfButton.disabled = false;
+            }
           }
           showParticipantsSection(true);
           fetchAndRenderParticipants();
@@ -680,14 +765,19 @@
           child_role: getChildRole(dialedTarget, myRole),
           transfer_to: transferTo,
         };
-        fetch("/transfer/warm-transfer", {
+        const warmTransferUrl = `${window.location.origin}/transfer/warm-transfer`;
+        fetch(warmTransferUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         })
-          .then((res) => res.json())
-          .then((data) => {
-            appendLog(`ℹ️ Warm transfer response: ${JSON.stringify(data)}`);
+          .then(async (res) => {
+            const text = await res.text();
+            if (!res.ok) {
+              appendLog(`❌ Warm transfer HTTP ${res.status}: ${text}`);
+              throw new Error(text);
+            }
+            appendLog(`ℹ️ Warm transfer response: ${text}`);
             onHold = true;
             holdConfButton.disabled = true;
             transferButton.disabled = true;
@@ -869,6 +959,18 @@
             li.style.marginBottom = "0.5rem";
             const isSelf =
               p.call_sid === myCallSid || p.participant_label === myIdentity;
+
+            // Keep track of another leg in the conference (not self) to act as
+            // the CHILD leg for warm-transfer. Prefer a non-agent role, but if
+            // none exists fall back to the first other participant.
+            if (!isSelf) {
+              if (p.role !== "agent") {
+                conferenceChildCallSid = p.call_sid;
+              } else if (!conferenceChildCallSid) {
+                conferenceChildCallSid = p.call_sid; // fallback
+              }
+            }
+
             let label = `${p.participant_label} (${p.role}) [On Hold: ${
               p.on_hold ? "Yes" : "No"
             }${p.on_hold ? "" : `, Muted: ${p.muted ? "Yes" : "No"}`}]`;
@@ -1013,6 +1115,20 @@
 
         appendLog("✅ Accepting incoming call...");
 
+        // Capture CallSid once the connection media starts
+        incomingConnection.on("accept", () => {
+          if (
+            incomingConnection.parameters &&
+            incomingConnection.parameters.CallSid
+          ) {
+            myCallSid = incomingConnection.parameters.CallSid;
+            appendLog(
+              `📌 My Call SID captured (accept): ${myCallSid}`,
+              "parent"
+            );
+          }
+        });
+
         ringtone.pause();
         ringtone.currentTime = 0;
 
@@ -1023,6 +1139,7 @@
         incomingConnection.accept();
         connection = incomingConnection;
         incomingConnection = null;
+        incomingFromConference = false; // Reset flag after call ends
       });
 
       initDialer();
