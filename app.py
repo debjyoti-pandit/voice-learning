@@ -26,8 +26,21 @@ class OptionalExtraFormatter(logging.Formatter):
     Extra attributes we care about: ``params``, ``payload``, ``conference_name``.
     """
     def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
+        # Obtain the base formatted string first.
         base = super().format(record)
 
+        # Detect colour based on log level.
+        colour_code = {
+            logging.DEBUG: "\033[95m",   # Bright magenta (pink)
+            logging.INFO: "\033[32m",    # Green
+            logging.WARNING: "\033[33m", # Yellow
+            logging.ERROR: "\033[31m",   # Red
+            logging.CRITICAL: "\033[1;31m",  # Bold red
+        }.get(record.levelno, "")
+
+        reset_code = "\033[0m" if colour_code else ""
+
+        # Append optional extras as before.
         extras: list[str] = []
         for key in ("params", "payload", "conference_name"):
             if not hasattr(record, key):
@@ -40,7 +53,8 @@ class OptionalExtraFormatter(logging.Formatter):
         if extras:
             base = f"{base} {' '.join(extras)}"
 
-        return base
+        # Wrap the entire message in colour codes.
+        return f"{colour_code}{base}{reset_code}"
 
 # Remove any handlers that might have been added by previous basicConfig calls
 for h in logging.root.handlers[:]:

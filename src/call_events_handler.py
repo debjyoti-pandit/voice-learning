@@ -58,16 +58,6 @@ class CallEventsHandler:
             stream_audio = str2bool(call_info.get('stream_audio', False))
             kick_participant_from_conference = str2bool(call_conference_info.get('kick_participant_from_conference', False))
             update_participant_in_conference = str2bool(call_conference_info.get('update_participant_in_conference', False))
-            current_app.logger.info("*************** Call Events Handler ********************")
-            current_app.logger.info(redis)
-            current_app.logger.info(call_info)
-            current_app.logger.info(call_conference_info)
-            current_app.logger.info(conference_name)
-            current_app.logger.info(conference_info)
-            current_app.logger.info(kick_participant_from_conference)
-            current_app.logger.info(stream_audio)
-            current_app.logger.info(update_participant_in_conference)
-            current_app.logger.info("*************** Call Events Handler ********************")
 
             if update_participant_in_conference:
                 conference_info['participants'][sid] = {
@@ -97,6 +87,25 @@ class CallEventsHandler:
                 ).start()
             self.call_log[log_key]['answered_time'] = timestamp
         elif status in ['completed', 'no-answer', 'busy', 'failed']:
+            if status == 'no-answer' or status == 'busy':
+                redis = current_app.config['redis']
+                call_info = redis.get(sid, {})
+                call_conference_info = call_info.get('conference', {})
+                conference_name = call_conference_info.get('conference_name', None)
+                conference_info = redis.get(conference_name, {})
+                kick_participant_from_conference = str2bool(call_conference_info.get('kick_participant_from_conference', False))
+                if kick_participant_from_conference:
+                    all_calls = conference_info["calls"]
+                    for call_sid, call_info in all_calls.items():
+                        if call_info.get('role') == 'ai-voice-agent' or call_info.get('role') == 'customer':
+                            client = current_app.config['twilio_client']
+                            client.conferences(conference_info["conference_sid"]).participants(call_sid).update(hold=False, muted=False)
+                            p = redis[conference_name]['participants'].get(call_sid)
+                            if p:
+                                p['on_hold'] = False
+                            current_app.logger.info("🎤 Unheld participant %s from conference %s", call_info["call_tag"], conference_name)
+
+
             self.call_log[log_key]['end_time'] = timestamp
 
         self._emit_status_event(call_type, sid, parent_sid, status, from_number, to_number, timestamp, duration, identity)
@@ -109,7 +118,6 @@ class CallEventsHandler:
     def _start_media_stream(self, client, call_sid, participant_label, app):
         """Start a Media Stream on the specified call so audio is sent to the websocket."""
         with app.app_context():
-            current_app.logger.info("*************** Call Events Handler ********************")
             current_app.logger.info("🎤 Starting media stream for %s", call_sid)
             stream_url = os.getenv('TRANSCRIPTION_WEBSOCKET_URL')
             if not stream_url:

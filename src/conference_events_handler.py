@@ -90,10 +90,10 @@ class ConferenceEventsHandler:
                     except Exception as e:
                         current_app.logger.error(f"No stream to stop on {call_sid} leg: {e}")
                 if role == "customer":
-                    add_to_conference = redis[friendly_name]['calls'][call_sid]['add_to_conference']
+                    add_to_conference = call_info.get('add_to_conference', False)
                     if add_to_conference:
-                        participant_role = redis[friendly_name]['calls'][call_sid]['participant_role']
-                        identity = redis[friendly_name]['calls'][call_sid]['participant_identity']
+                        participant_role = call_info.get('participant_role', None)
+                        identity = call_info.get('participant_identity', None)
                         current_app.logger.debug("🎤 Adding participant %s to conference %s", participant_label, add_to_conference)
                         client = current_app.config['twilio_client']
                         app = current_app._get_current_object()
@@ -116,7 +116,7 @@ class ConferenceEventsHandler:
 
                 if role == "agent":
                     call_info = redis[friendly_name]['calls'].get(call_sid, {})
-                    add_to_conference = str2bool(call_info.get('add_to_conference', False))
+                    add_to_conference = call_info.get('add_to_conference', False)
                     if add_to_conference:
                         participant_role = redis[friendly_name]['calls'][call_sid]['participant_role']
                         identity = redis[friendly_name]['calls'][call_sid]['participant_identity']
@@ -313,6 +313,7 @@ class ConferenceEventsHandler:
                 from_=caller_id,
                 early_media=True,
                 end_conference_on_exit=False,
+                beep=False,
                 muted=True,
                 label=participant_label,
                 conference_status_callback_method='POST',
