@@ -1,0 +1,11 @@
+{
+  "python.formatting.provider": "black",
+  "editor.formatOnSave": true,
+  "python.linting.enabled": true,
+  "python.linting.pylintEnabled": false,
+  "python.linting.flake8Enabled": true,
+  "python.linting.mypyEnabled": false,
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.python"
+  }
+}

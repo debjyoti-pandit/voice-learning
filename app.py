@@ -1,40 +1,44 @@
-from flask import Flask, request, jsonify
-from flask_socketio import SocketIO, join_room, leave_room
+import logging
+import os
+
 from dotenv import load_dotenv
-from src.templates_controller import templates_bp
+from flask import Flask, jsonify, request
+from flask_socketio import SocketIO, join_room, leave_room
+from twilio.rest import Client
+
 from src.auth_controller import auth_bp
-from src.greet_controller import greet_bp
-from src.voice_controller import voice_bp
 from src.call_events_controller import events_bp
 from src.conference_controller import conference_bp
-from src.hold_controller import hold_bp
-from src.transfer_controller import transfer_bp
-import os
-from twilio.rest import Client
-import logging
 from src.constants import SERVER_DOMAIN
+from src.greet_controller import greet_bp
+from src.hold_controller import hold_bp
+from src.templates_controller import templates_bp
+from src.transfer_controller import transfer_bp
+from src.voice_controller import voice_bp
 
 load_dotenv()
+
 
 # --- Logging -----------------------------------------------------------------
 # Custom formatter that appends selected extra attributes only when they are present
 # and non-empty so that lines without extras stay clean.
 class OptionalExtraFormatter(logging.Formatter):
-    """Formatter that appends selected extra attributes only when they are present
-    and non-empty so that lines without extras stay clean.
+    """Formatter that appends selected extra attributes only when they are
+    present and non-empty so that lines without extras stay clean.
 
     Extra attributes we care about: ``params``, ``payload``, ``conference_name``.
     """
+
     def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
         # Obtain the base formatted string first.
         base = super().format(record)
 
         # Detect colour based on log level.
         colour_code = {
-            logging.DEBUG: "\033[95m",   # Bright magenta (pink)
-            logging.INFO: "\033[32m",    # Green
-            logging.WARNING: "\033[33m", # Yellow
-            logging.ERROR: "\033[31m",   # Red
+            logging.DEBUG: "\033[95m",  # Bright magenta (pink)
+            logging.INFO: "\033[32m",  # Green
+            logging.WARNING: "\033[33m",  # Yellow
+            logging.ERROR: "\033[31m",  # Red
             logging.CRITICAL: "\033[1;31m",  # Bold red
         }.get(record.levelno, "")
 
@@ -56,14 +60,15 @@ class OptionalExtraFormatter(logging.Formatter):
         # Wrap the entire message in colour codes.
         return f"{colour_code}{base}{reset_code}"
 
+
 # Remove any handlers that might have been added by previous basicConfig calls
 for h in logging.root.handlers[:]:
     logging.root.removeHandler(h)
 
 _handler = logging.StreamHandler()
-_handler.setFormatter(OptionalExtraFormatter(
-    "%(asctime)s %(levelname)s [%(module)s] %(message)s"
-))
+_handler.setFormatter(
+    OptionalExtraFormatter("%(asctime)s %(levelname)s [%(module)s] %(message)s")
+)
 logging.root.setLevel(logging.INFO)
 logging.root.addHandler(_handler)
 
@@ -78,17 +83,17 @@ TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
-app.config['socketio'] = socketio
-app.config['twilio_client'] = twilio_client
+app.config["socketio"] = socketio
+app.config["twilio_client"] = twilio_client
 
 call_log: dict[str, dict] = {}
-app.config['call_log'] = call_log
+app.config["call_log"] = call_log
 
 redis: dict[str, dict] = {}
-app.config['redis'] = redis
+app.config["redis"] = redis
 
-app.config['SERVER_NAME'] = SERVER_DOMAIN
-app.config['PREFERRED_URL_SCHEME'] = 'https'
+app.config["SERVER_NAME"] = SERVER_DOMAIN
+app.config["PREFERRED_URL_SCHEME"] = "https"
 
 app.register_blueprint(templates_bp)
 app.register_blueprint(auth_bp)
@@ -107,7 +112,8 @@ connected_identities: set[str] = set()
 # disconnect handler).
 sid_to_identity: dict[str, str] = {}
 
-@socketio.on('connect')
+
+@socketio.on("connect")
 def handle_socket_connect():
     """Handle a new Socket.IO connection.
 
@@ -117,19 +123,20 @@ def handle_socket_connect():
     • Broadcast the updated list of identities to all connected clients so that
       their UI dropdowns stay in sync in real-time.
     """
-    identity = request.args.get('identity')
+    identity = request.args.get("identity")
     if identity:
         join_room(identity)
         # Record mapping so we can look it up on disconnect
         sid_to_identity[request.sid] = identity
         connected_identities.add(identity)
         # Broadcast the updated list to every client (no specific room).
-        socketio.emit('connected_identities', list(connected_identities))
+        socketio.emit("connected_identities", list(connected_identities))
         app.logger.info(f"🔌 Client connected and joined room: {identity}")
     else:
         app.logger.info("🔌 Client connected without identity")
 
-@socketio.on('disconnect')
+
+@socketio.on("disconnect")
 def handle_socket_disconnect():
     """Clean up tracking state when a Socket.IO client disconnects."""
     sid = request.sid
@@ -140,23 +147,26 @@ def handle_socket_disconnect():
         if identity not in sid_to_identity.values():
             connected_identities.discard(identity)
 
-        socketio.emit('connected_identities', list(connected_identities))
-        app.logger.info(f"🔌 Client with identity '{identity}' disconnected (sid={sid})")
-        # Optionally leave the room
+        socketio.emit("connected_identities", list(connected_identities))
+        app.logger.info(
+            f"🔌 Client with identity '{identity}' disconnected (sid={sid})"
+        )
         leave_room(identity)
     else:
-        app.logger.info(f"🔌 Client disconnected without tracked identity (sid={sid})")
+        app.logger.info(
+            f"🔌 Client disconnected without tracked identity (sid={sid})"
+        )
 
-# ---------------------------------------------------------------------------
-# HTTP helpers
-# ---------------------------------------------------------------------------
 
-@app.route('/connected-dialers', methods=['GET'])
+@app.route("/connected-dialers", methods=["GET"])
 def get_connected_dialers():
-    """Return a JSON list of identities for currently connected browser dialers."""
+    """Return a JSON list of identities for currently connected browser
+    dialers.
+    """
     return jsonify(list(connected_identities))
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     port = int(os.getenv("PORT", 5678))
     app.logger.info("🚀 Flask app listening on port %s", port)
-    socketio.run(app, host='0.0.0.0', port=port, debug=False)
+    socketio.run(app, host="0.0.0.0", port=port, debug=False)

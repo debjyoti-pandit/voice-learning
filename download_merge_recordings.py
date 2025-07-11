@@ -1,4 +1,4 @@
-"""download_merge_recordings.py
+"""download_merge_recordings.py.
 
 Download two audio recordings from the JustCall service by their recording IDs,
 store them in recordings/source, merge (concat) them, and save the result into
@@ -12,17 +12,18 @@ You need:
     - pydub   (pip install pydub)
     - ffmpeg  (brew install ffmpeg  # macOS, or use the official installers)
 """
+
 from __future__ import annotations
 
 import argparse
+import datetime
 import os
 import sys
 from urllib.parse import urlparse
-import datetime
 
 import requests
-from pydub import AudioSegment
 import urllib3
+from pydub import AudioSegment
 
 BASE_URL = (
     "https://callingservice.justcall.local/"
@@ -72,10 +73,15 @@ def download_recording(
                 file=sys.stderr,
             )
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-            return download_recording(recording_id, destination_folder, verify_ssl=False)
+            return download_recording(
+                recording_id, destination_folder, verify_ssl=False
+            )
         raise ssl_err
     except requests.RequestException as exc:
-        print(f"Failed to download recording {recording_id}: {exc}", file=sys.stderr)
+        print(
+            f"Failed to download recording {recording_id}: {exc}",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     ext = infer_extension(response.url)
@@ -100,7 +106,9 @@ def merge_recordings(first_path: str, second_path: str, output_path: str):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Download and merge two recordings.")
+    parser = argparse.ArgumentParser(
+        description="Download and merge two recordings."
+    )
     parser.add_argument(
         "--skip-ssl-verify",
         action="store_true",
@@ -157,4 +165,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()
