@@ -92,6 +92,23 @@ class ConferenceEventsHandler:
             if leave_sid in participants:
                 participants[leave_sid]["left"] = True
         try:
+            if event_type == "participant-unhold":
+                role = redis[friendly_name]["calls"][call_sid]["role"]
+                current_app.logger.debug("🎤 role: %s", role)
+                call_info = redis[friendly_name]["calls"].get(call_sid, {})
+                stream_audio_flag = str2bool(
+                    call_info.get("stream_audio", False)
+                )
+                if stream_audio_flag:
+                    client = current_app.config["twilio_client"]
+                    app = current_app._get_current_object()
+
+                    threading.Thread(
+                        target=self._start_media_stream,
+                        args=(client, call_sid, participant_label, app),
+                        daemon=True,
+                    ).start()
+
             if event_type == "participant-hold":
                 role = redis[friendly_name]["calls"][call_sid]["role"]
                 current_app.logger.debug("🎤 role: %s", role)
@@ -260,7 +277,7 @@ class ConferenceEventsHandler:
                     call_sid,
                     participant_label,
                 )
-                if stream_audio_flag:
+                if stream_audio_flag and not hold_on_conference_join:
                     client = current_app.config["twilio_client"]
                     app = current_app._get_current_object()
 

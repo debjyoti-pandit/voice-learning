@@ -111,7 +111,7 @@ class CallEventsHandler:
                         current_app.logger.info(
                             "🎤 Kicked participant %s from conference %s",
                             call_info["call_tag"],
-                            conference_info["conference_name"],
+                            conference_name,
                         )
             if stream_audio:
                 participant_label = redis[sid]["participant_label"]
