@@ -6,6 +6,6 @@
   "python.linting.flake8Enabled": true,
   "python.linting.mypyEnabled": false,
   "[python]": {
-    "editor.defaultFormatter": "ms-python.python"
+    "editor.defaultFormatter": "ms-python.black-formatter"
   }
 }

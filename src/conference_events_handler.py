@@ -84,6 +84,33 @@ class ConferenceEventsHandler:
         current_app.logger.debug(
             "Redis conference snapshot: %s", redis.get(friendly_name)
         )
+        if event_type == "conference-start":
+            current_app.logger.debug(
+                "current time in epoch when conference started: %s",
+                time.time(),
+            )
+            initiation_time = redis[friendly_name]["initiation_time"]
+            conference_start_time = time.time()
+            redis[friendly_name][
+                "conference_start_time"
+            ] = conference_start_time
+            delta_time = conference_start_time - initiation_time
+            redis[friendly_name]["delta_time"] = delta_time
+            redis[conference_sid] = {
+                "delta_time": delta_time,
+            }
+            current_app.logger.warning(
+                "current time in epoch when conference started: %s",
+                conference_start_time,
+            )
+            current_app.logger.warning(
+                "current time in epoch when conference initiation time: %s",
+                initiation_time,
+            )
+            current_app.logger.warning(
+                "current time in epoch when conference delta time: %s",
+                delta_time,
+            )
         if event_type == "participant-leave":
             # Twilio sometimes sends the participant's SID under the ParticipantSid parameter instead
             # of CallSid.  Fall back to that when CallSid is missing so that we correctly flag the
@@ -441,9 +468,6 @@ class ConferenceEventsHandler:
         websocket.
         """
         with app.app_context():
-            current_app.logger.info(
-                "*********** Conference Events Handler **************"
-            )
             current_app.logger.info("🎤 Starting media stream for %s", call_sid)
             stream_url = os.getenv("TRANSCRIPTION_WEBSOCKET_URL")
             if not stream_url:
@@ -454,6 +478,10 @@ class ConferenceEventsHandler:
 
             for attempt in range(3):
                 try:
+                    redis = current_app.config["redis"]
+                    conference_info = redis.get(call_sid, {})
+                    conference_info = conference_info.get("conference", {})
+                    delta_time = conference_info.get("delta_time", 0)
                     client.calls(call_sid).streams.create(
                         url=stream_url,
                         track="both_tracks",
@@ -465,7 +493,16 @@ class ConferenceEventsHandler:
                             "parameter2_value": "conference",
                             "parameter3_name": "track1_label",
                             "parameter3_value": participant_label,
+                            "parameter4_name": "stream_start_time_in_epoch_seconds",
+                            "parameter4_value": int(time.time()),
+                            "parameter6_name": "delta_time_in_epoch_seconds",
+                            "parameter6_value": int(delta_time),
                         },
+                    )
+                    current_app.logger.warning(
+                        "current time in epoch when the participant: %s was unheld: %s",
+                        participant_label,
+                        time.time(),
                     )
                     current_app.logger.debug(
                         "🎤 Successfully started media stream for %s (attempt %s)",

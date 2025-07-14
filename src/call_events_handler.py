@@ -71,6 +71,11 @@ class CallEventsHandler:
         if status == "ringing":
             self.call_log[log_key]["ringing_time"] = timestamp
         elif status == "in-progress":
+            current_app.logger.debug(
+                "current time in epoch when the participant: %s answered the call: %s",
+                identity,
+                time.time(),
+            )
             redis = current_app.config["redis"]
 
             call_info = redis.get(sid, {})
@@ -192,7 +197,7 @@ class CallEventsHandler:
         websocket.
         """
         with app.app_context():
-            current_app.logger.info("🎤 Starting media stream for %s", call_sid)
+            current_app.logger.error("🎤 Starting media stream for %s", call_sid)
             stream_url = os.getenv("TRANSCRIPTION_WEBSOCKET_URL")
             if not stream_url:
                 current_app.logger.warning(
@@ -202,6 +207,10 @@ class CallEventsHandler:
 
             for attempt in range(3):
                 try:
+                    redis = current_app.config["redis"]
+                    call_info = redis.get(call_sid, {})
+                    call_conference_info = call_info.get("conference", {})
+                    delta_time = call_conference_info.get("delta_time", 0)
                     client.calls(call_sid).streams.create(
                         url=stream_url,
                         track="both_tracks",
@@ -213,7 +222,16 @@ class CallEventsHandler:
                             "parameter2_value": "conference",
                             "parameter3_name": "track1_label",
                             "parameter3_value": participant_label,
+                            "parameter4_name": "stream_start_time_in_epoch_seconds",
+                            "parameter4_value": int(time.time()),
+                            "parameter6_name": "delta_time_in_epoch_seconds",
+                            "parameter6_value": int(delta_time),
                         },
+                    )
+                    current_app.logger.debug(
+                        "current time in epoch when the participant: %s 's stream was started after answering the call: %s",
+                        participant_label,
+                        time.time(),
                     )
                     current_app.logger.debug(
                         "🎤 Successfully started media stream for %s (attempt %s)",

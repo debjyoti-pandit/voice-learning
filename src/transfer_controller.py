@@ -56,7 +56,9 @@ def warm_transfer():
         entry = redis.get(sid)
         if entry and entry.get("conference"):
             existing_conference_info = entry["conference"]
-            conference_name_existing = existing_conference_info.get("conference_name")
+            conference_name_existing = existing_conference_info.get(
+                "conference_name"
+            )
             break  # Found the conference we need to update.
 
     if existing_conference_info and conference_name_existing:
@@ -114,7 +116,10 @@ def warm_transfer():
             )
             return jsonify({"error": f"Failed to add participant: {e}"}), 500
 
-        return jsonify({"message": "participant added to existing conference"}), 200
+        return (
+            jsonify({"message": "participant added to existing conference"}),
+            200,
+        )
     # END NEW LOGIC
 
     if not parent_role or not child_role:
@@ -177,14 +182,14 @@ def warm_transfer():
     if parent_role == "customer":
         start_conference_on_enter[parent_call_sid] = True
         end_conference_on_exit[parent_call_sid] = True
-        start_conference_on_enter[child_call_sid] = False
+        start_conference_on_enter[child_call_sid] = True
         end_conference_on_exit[child_call_sid] = False
         mute_on_conference_join[child_call_sid] = (
             True  # for aiva case it will be muted
         )
         mute_on_conference_join[parent_call_sid] = False
     elif parent_role == "agent":
-        start_conference_on_enter[parent_call_sid] = False
+        start_conference_on_enter[parent_call_sid] = True
         end_conference_on_exit[parent_call_sid] = False
         mute_on_conference_join[parent_call_sid] = True
         if child_role == "customer":
@@ -192,19 +197,9 @@ def warm_transfer():
             end_conference_on_exit[child_call_sid] = True
             mute_on_conference_join[child_call_sid] = False  # agent to customer
         else:
-            start_conference_on_enter[child_call_sid] = False
+            start_conference_on_enter[child_call_sid] = True
             end_conference_on_exit[child_call_sid] = False
             mute_on_conference_join[child_call_sid] = True  # agent to agent
-
-    for sid_label, sid in {"parent": parent_call_sid}.items():
-        try:
-            client.calls(sid).streams("initial_call_recording").update(
-                status="stopped"
-            )
-        except Exception as e:
-            current_app.logger.error(
-                f"No stream to stop on {sid_label} leg: {e}"
-            )
 
     try:
         redis = current_app.config["redis"]
@@ -266,9 +261,6 @@ def warm_transfer():
             },
             "participants": {},
         }
-        print("************************************************")
-        print("redis: %s", redis)
-        print("************************************************")
 
         client.calls(child_call_sid).update(
             url=url_for(
@@ -286,6 +278,27 @@ def warm_transfer():
             ),
             method="POST",
         )
+        current_app.logger.warning(
+            "current time in epoch when child call joined conference: %s",
+            time.time(),
+        )
+
+        redis[conference_name]["initiation_time"] = int(time.time())
+
+        for sid_label, sid in {"parent": parent_call_sid}.items():
+            try:
+                client.calls(sid).streams("initial_call_recording").update(
+                    status="stopped"
+                )
+                current_app.logger.warning(
+                    "current time in epoch when the initial dual channel stream was stopped: %s",
+                    time.time(),
+                )
+            except Exception as e:
+                current_app.logger.error(
+                    f"No stream to stop on {sid_label} leg: {e}"
+                )
+
         redis[conference_name]["participants"][child_call_sid] = {
             "participant_label": child_name,
             "call_sid": child_call_sid,
@@ -388,6 +401,7 @@ def hold_music():
     )
     return xml_response(response)
 
+
 def add_participant_to_conference(
     client,
     conference_sid,
@@ -405,18 +419,14 @@ def add_participant_to_conference(
         else add_to_conference
     )
     participant_identity = (
-        participant_label
-        if add_to_conference.startswith("client:")
-        else None
+        participant_label if add_to_conference.startswith("client:") else None
     )
 
     to_is_client = add_to_conference.startswith("client:")
     if to_is_client:
         import re
 
-        slug = re.sub(r"[^A-Za-z0-9_\-]", "-", friendly_name)[
-            :80
-        ]  # keep short
+        slug = re.sub(r"[^A-Za-z0-9_\-]", "-", friendly_name)[:80]  # keep short
         caller_id = f"client:conference-of-{slug}"
     else:
         caller_id = current_app.config.get("TWILIO_CALLER_ID") or os.getenv(
@@ -499,5 +509,3 @@ def add_participant_to_conference(
                 "update_participant_in_conference": True,
             },
         }
-
-
