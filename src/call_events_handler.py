@@ -212,11 +212,10 @@ class CallEventsHandler:
                     redis = current_app.config["redis"]
                     call_info = redis.get(call_sid, {})
                     call_conference_info = call_info.get("conference", {})
+                    conference_name = call_conference_info.get("conference_name")
+                    global_conference_info = redis.get(conference_name, {})
+                    recording_start_time_epoch = global_conference_info.get("recording_start_time", 0)
 
-                    # Recording start time in epoch seconds (if we have already received it)
-                    recording_start_time_epoch = int(
-                        call_conference_info.get("recording_start_time", 0) or 0
-                    )   
                     current_app.logger.debug(
                         "recording_start_time_epoch: %s in _start_media_stream of call_events_handler.py",
                         recording_start_time_epoch,

@@ -261,8 +261,6 @@ def voice_recording_events():
         "📞 voice_recording_events endpoint invoked",
         extra={"params": request.values.to_dict()},
     )
-
-
     socketio = current_app.config.get("socketio")
 
     if socketio:

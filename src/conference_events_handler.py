@@ -481,25 +481,13 @@ class ConferenceEventsHandler:
                     redis = current_app.config["redis"]
 
                     call_info = redis.get(call_sid, {})
-                    conference_info = call_info.get("conference", {})
-
-                    # Determine delta_time from the conference-level cache (preferred) – it is
-                    # stored against the friendly name by the `conference-start` event handler.
-                    delta_time = 0
-                    conference_name = conference_info.get("conference_name")
-                    if conference_name:
-                        delta_time = int(
-                            redis.get(conference_name, {}).get("delta_time", 0)
-                        )
-
-                    # Fallback: look for a delta on the call object itself to maintain backwards
-                    # compatibility.
-                    if not delta_time:
-                        delta_time = int(conference_info.get("delta_time", 0))
-
-                    # Recording start time in epoch seconds (if we have already received it)
-                    recording_start_time_epoch = int(
-                        conference_info.get("recording_start_time", 0) or 0
+                    conference_info_of_call = call_info.get("conference", {})
+                    conference_name = conference_info_of_call.get("conference_name")
+                    global_conference_info = redis.get(conference_name, {})
+                    recording_start_time_epoch = global_conference_info.get("recording_start_time", 0)
+                    current_app.logger.debug(
+                        "recording_start_time_epoch: %s in _start_media_stream of conference_events_handler.py",
+                        recording_start_time_epoch,
                     )
 
                     client.calls(call_sid).streams.create(
@@ -517,8 +505,6 @@ class ConferenceEventsHandler:
                             "parameter4_value": int(time.time()),
                             "parameter5_name": "recording_start_time_in_epoch_seconds",
                             "parameter5_value": int(recording_start_time_epoch),
-                            "parameter6_name": "delta_time_in_epoch_seconds",
-                            "parameter6_value": int(delta_time),
                         },
                     )
                     current_app.logger.warning(

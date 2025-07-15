@@ -7,6 +7,8 @@ from twilio.twiml.voice_response import VoiceResponse
 from src.conference_events_handler import ConferenceEventsHandler
 from src.utils import xml_response
 
+from datetime import datetime
+
 load_dotenv()
 
 conference_bp = Blueprint("conference", __name__)
@@ -296,14 +298,23 @@ def conference_recording_events():
 
     recording_start_time = request.values.get("RecordingStartTime")
     conference_sid = request.values.get("ConferenceSid")
+    client = current_app.config["twilio_client"]
+    conference = client.conferences(conference_sid).fetch()
+    current_app.logger.debug(
+        "conference: %s",
+        conference,
+    )
+    friendly_name = conference.friendly_name
+
     recording_start_time_epoch = None
 
     if recording_start_time:
         try:
-            from datetime import datetime
-            import dateutil.parser
-            dt = dateutil.parser.isoparse(recording_start_time)
-            recording_start_time_epoch = dt.timestamp()
+            if recording_start_time.endswith("Z"):
+                recording_start_time = recording_start_time[:-1] + "+00:00"
+
+            dt = datetime.fromisoformat(recording_start_time)
+            recording_start_time_epoch = int(dt.timestamp())
         except Exception as e:
             current_app.logger.error(
                 "Failed to parse recording_start_time: %s",
@@ -316,13 +327,8 @@ def conference_recording_events():
             recording_start_time_epoch,
         )
         redis = current_app.config["redis"]
-        conference_info = redis.get(conference_sid, {})
-        conference_info["recording_start_time"] = recording_start_time_epoch
-        current_app.logger.debug(
-            "conference_info: %s",
-            conference_info,
-        )
-        redis[conference_sid] = conference_info
+        conference_info_via_friendly_name = redis.get(friendly_name, {})
+        conference_info_via_friendly_name["recording_start_time"] = recording_start_time_epoch
 
     socketio = current_app.config["socketio"]
 
