@@ -237,9 +237,9 @@ class CallEventsHandler:
                             "parameter3_name": "track1_label",
                             "parameter3_value": participant_label,
                             "parameter4_name": "stream_start_time_in_epoch_seconds",
-                            "parameter4_value": int(time.time()),
+                            "parameter4_value": time.time(),
                             "parameter5_name": "recording_start_time_in_epoch_seconds",
-                            "parameter5_value": int(recording_start_time_epoch),
+                            "parameter5_value": recording_start_time_epoch,
                         },
                     )
                     current_app.logger.debug(
