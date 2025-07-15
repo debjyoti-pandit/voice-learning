@@ -283,8 +283,6 @@ def warm_transfer():
             time.time(),
         )
 
-        redis[conference_name]["initiation_time"] = int(time.time())
-
         for sid_label, sid in {"parent": parent_call_sid}.items():
             try:
                 client.calls(sid).streams("initial_call_recording").update(

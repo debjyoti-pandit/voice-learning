@@ -84,33 +84,6 @@ class ConferenceEventsHandler:
         current_app.logger.debug(
             "Redis conference snapshot: %s", redis.get(friendly_name)
         )
-        if event_type == "conference-start":
-            current_app.logger.debug(
-                "current time in epoch when conference started: %s",
-                time.time(),
-            )
-            initiation_time = redis[friendly_name]["initiation_time"]
-            conference_start_time = time.time()
-            redis[friendly_name][
-                "conference_start_time"
-            ] = conference_start_time
-            delta_time = conference_start_time - initiation_time
-            redis[friendly_name]["delta_time"] = delta_time
-            redis[conference_sid] = {
-                "delta_time": delta_time,
-            }
-            current_app.logger.warning(
-                "current time in epoch when conference started: %s",
-                conference_start_time,
-            )
-            current_app.logger.warning(
-                "current time in epoch when conference initiation time: %s",
-                initiation_time,
-            )
-            current_app.logger.warning(
-                "current time in epoch when conference delta time: %s",
-                delta_time,
-            )
         if event_type == "participant-leave":
             # Twilio sometimes sends the participant's SID under the ParticipantSid parameter instead
             # of CallSid.  Fall back to that when CallSid is missing so that we correctly flag the
@@ -143,16 +116,16 @@ class ConferenceEventsHandler:
                 stream_audio_flag = str2bool(
                     call_info.get("stream_audio", False)
                 )
-                if stream_audio_flag:
-                    try:
-                        client = current_app.config["twilio_client"]
-                        client.calls(call_sid).streams(
-                            participant_label
-                        ).update(status="stopped")
-                    except Exception as e:
-                        current_app.logger.error(
-                            f"No stream to stop on {call_sid} leg: {e}"
-                        )
+                # if stream_audio_flag:
+                #     try:
+                #         client = current_app.config["twilio_client"]
+                #         client.calls(call_sid).streams(
+                #             participant_label
+                #         ).update(status="stopped")
+                #     except Exception as e:
+                #         current_app.logger.error(
+                #             f"No stream to stop on {call_sid} leg: {e}"
+                # )
                 if role == "customer":
                     add_to_conference = call_info.get(
                         "add_to_conference", False
@@ -482,9 +455,13 @@ class ConferenceEventsHandler:
 
                     call_info = redis.get(call_sid, {})
                     conference_info_of_call = call_info.get("conference", {})
-                    conference_name = conference_info_of_call.get("conference_name")
+                    conference_name = conference_info_of_call.get(
+                        "conference_name"
+                    )
                     global_conference_info = redis.get(conference_name, {})
-                    recording_start_time_epoch = global_conference_info.get("recording_start_time", 0)
+                    recording_start_time_epoch = global_conference_info.get(
+                        "recording_start_time", 0
+                    )
                     current_app.logger.debug(
                         "recording_start_time_epoch: %s in _start_media_stream of conference_events_handler.py",
                         recording_start_time_epoch,

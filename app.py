@@ -69,14 +69,14 @@ _handler = logging.StreamHandler()
 _handler.setFormatter(
     OptionalExtraFormatter("%(asctime)s %(levelname)s [%(module)s] %(message)s")
 )
-logging.root.setLevel(logging.ERROR)
+logging.root.setLevel(logging.DEBUG)
 logging.root.addHandler(_handler)
 
 # --- End logging setup -------------------------------------------------------
 
 app = Flask(__name__)
 
-app.logger.setLevel(logging.ERROR)
+app.logger.setLevel(logging.DEBUG)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
