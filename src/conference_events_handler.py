@@ -479,9 +479,24 @@ class ConferenceEventsHandler:
             for attempt in range(3):
                 try:
                     redis = current_app.config["redis"]
-                    conference_info = redis.get(call_sid, {})
-                    conference_info = conference_info.get("conference", {})
-                    delta_time = conference_info.get("delta_time", 0)
+
+                    call_info = redis.get(call_sid, {})
+                    conference_info = call_info.get("conference", {})
+
+                    # Determine delta_time from the conference-level cache (preferred) – it is
+                    # stored against the friendly name by the `conference-start` event handler.
+                    delta_time = 0
+                    conference_name = conference_info.get("conference_name")
+                    if conference_name:
+                        delta_time = int(
+                            redis.get(conference_name, {}).get("delta_time", 0)
+                        )
+
+                    # Fallback: look for a delta on the call object itself to maintain backwards
+                    # compatibility.
+                    if not delta_time:
+                        delta_time = int(conference_info.get("delta_time", 0))
+
                     client.calls(call_sid).streams.create(
                         url=stream_url,
                         track="both_tracks",

@@ -197,7 +197,9 @@ class CallEventsHandler:
         websocket.
         """
         with app.app_context():
-            current_app.logger.error("🎤 Starting media stream for %s", call_sid)
+            current_app.logger.error(
+                "🎤 Starting media stream for %s", call_sid
+            )
             stream_url = os.getenv("TRANSCRIPTION_WEBSOCKET_URL")
             if not stream_url:
                 current_app.logger.warning(
@@ -210,7 +212,29 @@ class CallEventsHandler:
                     redis = current_app.config["redis"]
                     call_info = redis.get(call_sid, {})
                     call_conference_info = call_info.get("conference", {})
-                    delta_time = call_conference_info.get("delta_time", 0)
+
+                    # Fetch delta_time from the conference-level cache if available. The delta
+                    # is calculated and stored during the `conference-start` event under the
+                    # friendly name of the conference. Fall back to any value already present
+                    # on the call object, and ultimately to 0 if none is found.
+                    delta_time = 0
+                    conference_name = call_conference_info.get(
+                        "conference_name"
+                    )
+                    if conference_name:
+                        delta_time = int(
+                            current_app.config["redis"]
+                            .get(conference_name, {})
+                            .get("delta_time", 0)
+                        )
+
+                    # Fallback to whatever might have been stored directly on the call object
+                    # (maintains backwards compatibility with older cache layout).
+                    if not delta_time:
+                        delta_time = int(
+                            call_conference_info.get("delta_time", 0)
+                        )
+
                     client.calls(call_sid).streams.create(
                         url=stream_url,
                         track="both_tracks",
