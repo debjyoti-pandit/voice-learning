@@ -92,7 +92,7 @@ class ConferenceEventsHandler:
             if leave_sid in participants:
                 participants[leave_sid]["left"] = True
         try:
-            if event_type == "participant-hold":
+            if event_type == "participant-unhold":
                 role = redis[friendly_name]["calls"][call_sid]["role"]
                 current_app.logger.debug("🎤 role: %s", role)
                 call_info = redis[friendly_name]["calls"].get(call_sid, {})
@@ -100,15 +100,32 @@ class ConferenceEventsHandler:
                     call_info.get("stream_audio", False)
                 )
                 if stream_audio_flag:
-                    try:
-                        client = current_app.config["twilio_client"]
-                        client.calls(call_sid).streams(
-                            participant_label
-                        ).update(status="stopped")
-                    except Exception as e:
-                        current_app.logger.error(
-                            f"No stream to stop on {call_sid} leg: {e}"
-                        )
+                    client = current_app.config["twilio_client"]
+                    app = current_app._get_current_object()
+
+                    threading.Thread(
+                        target=self._start_media_stream,
+                        args=(client, call_sid, participant_label, app),
+                        daemon=True,
+                    ).start()
+
+            if event_type == "participant-hold":
+                role = redis[friendly_name]["calls"][call_sid]["role"]
+                current_app.logger.debug("🎤 role: %s", role)
+                call_info = redis[friendly_name]["calls"].get(call_sid, {})
+                stream_audio_flag = str2bool(
+                    call_info.get("stream_audio", False)
+                )
+                # if stream_audio_flag:
+                #     try:
+                #         client = current_app.config["twilio_client"]
+                #         client.calls(call_sid).streams(
+                #             participant_label
+                #         ).update(status="stopped")
+                #     except Exception as e:
+                #         current_app.logger.error(
+                #             f"No stream to stop on {call_sid} leg: {e}"
+                # )
                 if role == "customer":
                     add_to_conference = call_info.get(
                         "add_to_conference", False
@@ -260,7 +277,7 @@ class ConferenceEventsHandler:
                     call_sid,
                     participant_label,
                 )
-                if stream_audio_flag:
+                if stream_audio_flag and not hold_on_conference_join:
                     client = current_app.config["twilio_client"]
                     app = current_app._get_current_object()
 
@@ -424,9 +441,6 @@ class ConferenceEventsHandler:
         websocket.
         """
         with app.app_context():
-            current_app.logger.info(
-                "*********** Conference Events Handler **************"
-            )
             current_app.logger.info("🎤 Starting media stream for %s", call_sid)
             stream_url = os.getenv("TRANSCRIPTION_WEBSOCKET_URL")
             if not stream_url:
@@ -437,6 +451,22 @@ class ConferenceEventsHandler:
 
             for attempt in range(3):
                 try:
+                    redis = current_app.config["redis"]
+
+                    call_info = redis.get(call_sid, {})
+                    conference_info_of_call = call_info.get("conference", {})
+                    conference_name = conference_info_of_call.get(
+                        "conference_name"
+                    )
+                    global_conference_info = redis.get(conference_name, {})
+                    recording_start_time_epoch = global_conference_info.get(
+                        "recording_start_time", 0
+                    )
+                    current_app.logger.debug(
+                        "recording_start_time_epoch: %s in _start_media_stream of conference_events_handler.py",
+                        recording_start_time_epoch,
+                    )
+
                     client.calls(call_sid).streams.create(
                         url=stream_url,
                         track="both_tracks",
@@ -448,7 +478,16 @@ class ConferenceEventsHandler:
                             "parameter2_value": "conference",
                             "parameter3_name": "track1_label",
                             "parameter3_value": participant_label,
+                            "parameter4_name": "stream_start_time_in_epoch_seconds",
+                            "parameter4_value": time.time(),
+                            "parameter5_name": "recording_start_time_in_epoch_seconds",
+                            "parameter5_value": recording_start_time_epoch,
                         },
+                    )
+                    current_app.logger.warning(
+                        "current time in epoch when the participant: %s was unheld: %s",
+                        participant_label,
+                        time.time(),
                     )
                     current_app.logger.debug(
                         "🎤 Successfully started media stream for %s (attempt %s)",

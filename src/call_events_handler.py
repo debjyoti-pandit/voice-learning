@@ -71,6 +71,11 @@ class CallEventsHandler:
         if status == "ringing":
             self.call_log[log_key]["ringing_time"] = timestamp
         elif status == "in-progress":
+            current_app.logger.debug(
+                "current time in epoch when the participant: %s answered the call: %s",
+                identity,
+                time.time(),
+            )
             redis = current_app.config["redis"]
 
             call_info = redis.get(sid, {})
@@ -111,7 +116,7 @@ class CallEventsHandler:
                         current_app.logger.info(
                             "🎤 Kicked participant %s from conference %s",
                             call_info["call_tag"],
-                            conference_info["conference_name"],
+                            conference_name,
                         )
             if stream_audio:
                 participant_label = redis[sid]["participant_label"]
@@ -192,7 +197,9 @@ class CallEventsHandler:
         websocket.
         """
         with app.app_context():
-            current_app.logger.info("🎤 Starting media stream for %s", call_sid)
+            current_app.logger.error(
+                "🎤 Starting media stream for %s", call_sid
+            )
             stream_url = os.getenv("TRANSCRIPTION_WEBSOCKET_URL")
             if not stream_url:
                 current_app.logger.warning(
@@ -202,6 +209,22 @@ class CallEventsHandler:
 
             for attempt in range(3):
                 try:
+                    redis = current_app.config["redis"]
+                    call_info = redis.get(call_sid, {})
+                    call_conference_info = call_info.get("conference", {})
+                    conference_name = call_conference_info.get(
+                        "conference_name"
+                    )
+                    global_conference_info = redis.get(conference_name, {})
+                    recording_start_time_epoch = global_conference_info.get(
+                        "recording_start_time", 0
+                    )
+
+                    current_app.logger.warning(
+                        "recording_start_time_epoch: %s in _start_media_stream of call_events_handler.py",
+                        recording_start_time_epoch,
+                    )
+
                     client.calls(call_sid).streams.create(
                         url=stream_url,
                         track="both_tracks",
@@ -213,7 +236,16 @@ class CallEventsHandler:
                             "parameter2_value": "conference",
                             "parameter3_name": "track1_label",
                             "parameter3_value": participant_label,
+                            "parameter4_name": "stream_start_time_in_epoch_seconds",
+                            "parameter4_value": time.time(),
+                            "parameter5_name": "recording_start_time_in_epoch_seconds",
+                            "parameter5_value": recording_start_time_epoch,
                         },
+                    )
+                    current_app.logger.debug(
+                        "current time in epoch when the participant: %s 's stream was started after answering the call: %s",
+                        participant_label,
+                        time.time(),
                     )
                     current_app.logger.debug(
                         "🎤 Successfully started media stream for %s (attempt %s)",

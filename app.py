@@ -69,7 +69,7 @@ _handler = logging.StreamHandler()
 _handler.setFormatter(
     OptionalExtraFormatter("%(asctime)s %(levelname)s [%(module)s] %(message)s")
 )
-logging.root.setLevel(logging.INFO)
+logging.root.setLevel(logging.DEBUG)
 logging.root.addHandler(_handler)
 
 # --- End logging setup -------------------------------------------------------

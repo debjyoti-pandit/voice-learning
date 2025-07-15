@@ -1,3 +1,4 @@
+from email.utils import parsedate_to_datetime
 import os
 
 from dotenv import load_dotenv
@@ -6,6 +7,9 @@ from twilio.twiml.voice_response import VoiceResponse
 
 from src.conference_events_handler import ConferenceEventsHandler
 from src.utils import xml_response
+
+# from datetime import datetime
+# from email.utils import parsedate_to_datetime
 
 load_dotenv()
 
@@ -293,6 +297,39 @@ def conference_recording_events():
         "🎪 conference_recording_events endpoint invoked",
         extra={"params": request.values.to_dict()},
     )
+
+    recording_start_time = request.values.get("RecordingStartTime")
+    conference_sid = request.values.get("ConferenceSid")
+    client = current_app.config["twilio_client"]
+    conference = client.conferences(conference_sid).fetch()
+    friendly_name = conference.friendly_name
+
+    recording_start_time_epoch = None
+
+    if recording_start_time:
+        try:
+            # Incoming format: Tue, 15 Jul 2025 10:52:25 +0000'
+            dt = parsedate_to_datetime(recording_start_time)
+            recording_start_time_epoch =dt.timestamp()
+        except Exception as e:
+            current_app.logger.error(
+                "Failed to parse recording_start_time: %s",
+                recording_start_time,
+                e,
+            )
+    if recording_start_time_epoch:
+        current_app.logger.debug(
+            "recording_start_time_epoch: %s",
+            recording_start_time_epoch,
+        )
+        redis = current_app.config["redis"]
+        conference_info_via_friendly_name = redis.get(friendly_name, {})
+        conference_info_via_friendly_name["recording_start_time"] = recording_start_time_epoch
+        redis[friendly_name] = conference_info_via_friendly_name
+        current_app.logger.warning(
+            "conference_info_via_friendly_name: %s",
+            conference_info_via_friendly_name,
+        )
 
     socketio = current_app.config["socketio"]
 

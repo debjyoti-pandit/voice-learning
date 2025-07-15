@@ -1,4 +1,5 @@
 import os
+import time
 
 from dotenv import load_dotenv
 from flask import Blueprint, current_app, jsonify, request, url_for
@@ -58,6 +59,11 @@ def voice():
             method="POST",
             timeout=20,
             record="record-from-answer-dual",
+            recording_status_callback=url_for(
+                "voice.voice_recording_events", _external=True
+            ),
+            recording_status_callback_method="POST",
+            recording_status_callback_event="in-progress completed absent",
         )
         if to_number.startswith("client:"):
             client_name = to_number[len("client:") :]
@@ -246,3 +252,24 @@ def update_call_url():
     except Exception as e:
         current_app.logger.error("🔄 Failed to update call %s: %s", call_sid, e)
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@voice_bp.route("/voice-recording-events", methods=["POST", "GET"])
+def voice_recording_events():
+    """Webhook endpoint for Twilio recording status callbacks during individual calls."""
+    current_app.logger.warning(
+        "📞 voice_recording_events endpoint invoked",
+        extra={"params": request.values.to_dict()},
+    )
+    socketio = current_app.config.get("socketio")
+
+    if socketio:
+        # Broadcast the recording event details over websocket so clients can react in real-time.
+        event_data = request.values.to_dict()
+        socketio.emit("voice_recording_event", event_data)
+
+    current_app.logger.info(
+        "📞 voice_recording_events endpoint processing complete"
+    )
+    # Twilio expects a 200 (empty) or 204 response.
+    return "", 204
