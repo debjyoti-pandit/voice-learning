@@ -294,6 +294,36 @@ def conference_recording_events():
         extra={"params": request.values.to_dict()},
     )
 
+    recording_start_time = request.values.get("RecordingStartTime")
+    conference_sid = request.values.get("ConferenceSid")
+    recording_start_time_epoch = None
+
+    if recording_start_time:
+        try:
+            from datetime import datetime
+            import dateutil.parser
+            dt = dateutil.parser.isoparse(recording_start_time)
+            recording_start_time_epoch = dt.timestamp()
+        except Exception as e:
+            current_app.logger.error(
+                "Failed to parse recording_start_time: %s",
+                recording_start_time,
+                e,
+            )
+    if recording_start_time_epoch:
+        current_app.logger.debug(
+            "recording_start_time_epoch: %s",
+            recording_start_time_epoch,
+        )
+        redis = current_app.config["redis"]
+        conference_info = redis.get(conference_sid, {})
+        conference_info["recording_start_time"] = recording_start_time_epoch
+        current_app.logger.debug(
+            "conference_info: %s",
+            conference_info,
+        )
+        redis[conference_sid] = conference_info
+
     socketio = current_app.config["socketio"]
 
     # Broadcast the recording event details over websocket so clients can react in real-time.

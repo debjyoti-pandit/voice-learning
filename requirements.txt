@@ -5,3 +5,4 @@ python-dotenv
 watchdog
 requests
 pydub
+python-dateutil

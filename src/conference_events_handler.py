@@ -497,6 +497,11 @@ class ConferenceEventsHandler:
                     if not delta_time:
                         delta_time = int(conference_info.get("delta_time", 0))
 
+                    # Recording start time in epoch seconds (if we have already received it)
+                    recording_start_time_epoch = int(
+                        conference_info.get("recording_start_time", 0) or 0
+                    )
+
                     client.calls(call_sid).streams.create(
                         url=stream_url,
                         track="both_tracks",
@@ -510,6 +515,8 @@ class ConferenceEventsHandler:
                             "parameter3_value": participant_label,
                             "parameter4_name": "stream_start_time_in_epoch_seconds",
                             "parameter4_value": int(time.time()),
+                            "parameter5_name": "recording_start_time_in_epoch_seconds",
+                            "parameter5_value": int(recording_start_time_epoch),
                             "parameter6_name": "delta_time_in_epoch_seconds",
                             "parameter6_value": int(delta_time),
                         },

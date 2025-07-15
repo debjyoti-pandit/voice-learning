@@ -261,16 +261,7 @@ def voice_recording_events():
         "📞 voice_recording_events endpoint invoked",
         extra={"params": request.values.to_dict()},
     )
-    call_sid = request.values.get("CallSid")
-    recording_start_time = request.values.get("RecordingStartTime")
-    recording_duration = request.values.get("RecordingDuration")
 
-    redis = current_app.config["redis"]
-    call_info = redis.get(call_sid, {})
-    if call_info.get("child_call_moved_to_conference", False):
-        call_info["conference"]["recording_start_time"] = recording_start_time
-        call_info["conference"]["recording_duration"] = recording_duration
-        call_info["conference"]["recording_end_time"] = time.time()
 
     socketio = current_app.config.get("socketio")
 

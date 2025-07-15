@@ -213,27 +213,14 @@ class CallEventsHandler:
                     call_info = redis.get(call_sid, {})
                     call_conference_info = call_info.get("conference", {})
 
-                    # Fetch delta_time from the conference-level cache if available. The delta
-                    # is calculated and stored during the `conference-start` event under the
-                    # friendly name of the conference. Fall back to any value already present
-                    # on the call object, and ultimately to 0 if none is found.
-                    delta_time = 0
-                    conference_name = call_conference_info.get(
-                        "conference_name"
+                    # Recording start time in epoch seconds (if we have already received it)
+                    recording_start_time_epoch = int(
+                        call_conference_info.get("recording_start_time", 0) or 0
+                    )   
+                    current_app.logger.debug(
+                        "recording_start_time_epoch: %s in _start_media_stream of call_events_handler.py",
+                        recording_start_time_epoch,
                     )
-                    if conference_name:
-                        delta_time = int(
-                            current_app.config["redis"]
-                            .get(conference_name, {})
-                            .get("delta_time", 0)
-                        )
-
-                    # Fallback to whatever might have been stored directly on the call object
-                    # (maintains backwards compatibility with older cache layout).
-                    if not delta_time:
-                        delta_time = int(
-                            call_conference_info.get("delta_time", 0)
-                        )
 
                     client.calls(call_sid).streams.create(
                         url=stream_url,
@@ -248,8 +235,8 @@ class CallEventsHandler:
                             "parameter3_value": participant_label,
                             "parameter4_name": "stream_start_time_in_epoch_seconds",
                             "parameter4_value": int(time.time()),
-                            "parameter6_name": "delta_time_in_epoch_seconds",
-                            "parameter6_value": int(delta_time),
+                            "parameter5_name": "recording_start_time_in_epoch_seconds",
+                            "parameter5_value": int(recording_start_time_epoch),
                         },
                     )
                     current_app.logger.debug(
