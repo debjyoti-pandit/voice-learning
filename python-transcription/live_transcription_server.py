@@ -43,15 +43,16 @@ import logging
 import os
 import re
 import time
-from datetime import datetime
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, cast
 
-from aiohttp import web
 from dotenv import load_dotenv
 
 # websockets ≥10 renamed the sub-module; fall back for older versions.
 try:
-    from websockets.server import WebSocketServerProtocol, serve  # type: ignore[attr-defined]
+    from websockets.server import (  # type: ignore[attr-defined]
+        WebSocketServerProtocol,
+        serve,
+    )
 except ImportError:  # pragma: no cover
     from websockets.legacy.server import (  # type: ignore[attr-defined]
         WebSocketServerProtocol,
@@ -66,9 +67,9 @@ from deepgram import Deepgram
 
 load_dotenv()
 
-DEEPGRAM_API_KEY: Optional[str] = os.getenv("DEEPGRAM_API_KEY")
+DEEPGRAM_API_KEY: str | None = os.getenv("DEEPGRAM_API_KEY")
 if not DEEPGRAM_API_KEY:
-    raise EnvironmentError(
+    raise OSError(
         "DEEPGRAM_API_KEY environment variable not set. Please export it first."
     )
 
@@ -77,7 +78,7 @@ WEBSOCKET_PORT: int = int(os.getenv("WEBSOCKET_PORT", "6789"))
 CONTROL_HTTP_PORT: int = int(os.getenv("CONTROL_HTTP_PORT", "4567"))
 
 # Deepgram streaming parameters tuned for Twilio 8 kHz µ-law mono streams.
-DG_OPTIONS: Dict[str, Any] = {
+DG_OPTIONS: dict[str, Any] = {
     "model": "nova-3",
     "language": "en-US",
     "encoding": "mulaw",
@@ -139,10 +140,10 @@ async def _create_deepgram_connection():
     """
     transcript_q: asyncio.Queue[dict] = asyncio.Queue()
 
-    async def _on_transcript(event: dict):  # noqa: D401
+    async def _on_transcript(event: dict):
         await transcript_q.put(event)
 
-    dg_socket = await getattr(_DEEPGRAM, "transcription").live(DG_OPTIONS)
+    dg_socket = await _DEEPGRAM.transcription.live(DG_OPTIONS)
     dg_socket.registerHandler(  # type: ignore[attr-defined]
         dg_socket.event.TRANSCRIPT_RECEIVED,
         _on_transcript,
@@ -151,14 +152,14 @@ async def _create_deepgram_connection():
 
 
 async def _consume_transcripts(
-    queue: "asyncio.Queue[dict]",
+    queue: asyncio.Queue[dict],
     file_prefix: str,
 ):
     """Aggregate Deepgram transcripts and write them to disk when done.
 
     The function exits when ``None`` is pushed onto *queue*.
     """
-    results: List[dict] = []  # each element is one Deepgram "final" result
+    results: list[dict] = []  # each element is one Deepgram "final" result
 
     while True:
         payload = await queue.get()
@@ -167,16 +168,16 @@ async def _consume_transcripts(
 
         # We only care about payloads that contain alternatives/words
         channel: dict = payload.get("channel", {})
-        alts: List[dict] = channel.get("alternatives", [])
+        alts: list[dict] = channel.get("alternatives", [])
         if not alts:
             continue
 
         alt: dict = alts[0]
-        words: List[dict] = alt.get("words", [])
+        words: list[dict] = alt.get("words", [])
         if not words:
             continue
 
-        word_entries: List[dict] = []
+        word_entries: list[dict] = []
         for w in words:
             rel_start_s: float = float(w.get("start", 0.0))
             rel_end_s: float = float(w.get("end", rel_start_s))
@@ -226,9 +227,8 @@ async def _consume_transcripts(
 
 async def _twilio_media_handler(
     websocket: WebSocketServerProtocol,
-):  # noqa: C901
+):
     """Handle a single Twilio Media Stream connection."""
-
     logging.info("New connection from %s", websocket.remote_address)
 
     # We do not know flow-type / labels until the Start event, so keep them here
@@ -236,7 +236,7 @@ async def _twilio_media_handler(
     participant_label: str = "participant"
 
     # Epoch that aligns to Deepgram's 0.0 s. We set it on first media chunk.
-    base_epoch_ms: Optional[int] = None
+    base_epoch_ms: int | None = None
     stream_active: bool = (
         False  # becomes True once we forward first non-silent frame
     )
@@ -334,7 +334,7 @@ async def _twilio_media_handler(
 
                 try:
                     audio_bytes = base64.b64decode(payload_b64)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logging.warning("Bad base64 payload: %s", exc)
                     continue
 
@@ -360,13 +360,13 @@ async def _twilio_media_handler(
                             base_epoch_ms,
                             rel_ms,
                         )
-                    except Exception:  # noqa: BLE001
+                    except Exception:
                         pass
 
                 # Forward to Deepgram now that we have real audio
                 try:
                     dg_socket.send(audio_bytes)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     logging.error(
                         "Failed to forward audio to Deepgram: %s", exc
                     )
@@ -378,7 +378,7 @@ async def _twilio_media_handler(
                 logging.info("Stream %s stopped", msg.get("streamSid"))
                 break
 
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logging.error("Unexpected error in media handler: %s", exc)
     finally:
         # -------------------------------------------------------------
@@ -387,7 +387,7 @@ async def _twilio_media_handler(
         if dg_socket is not None:
             try:
                 await dg_socket.finish()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
         if dg_queue is not None:
@@ -406,7 +406,7 @@ async def _twilio_media_handler(
 ###############################################################################
 
 
-async def main() -> None:  # noqa: D401
+async def main() -> None:
     logging.info(
         "Starting WebSocket server on %s:%s", WEBSOCKET_HOST, WEBSOCKET_PORT
     )

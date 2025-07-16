@@ -75,7 +75,7 @@ def main() -> None:
         input_path = max(json_files, key=os.path.getmtime)
         print(f"Auto-selected latest transcript: {input_path}")
 
-    with open(input_path, "r", encoding="utf-8") as fp:
+    with open(input_path, encoding="utf-8") as fp:
         data = json.load(fp)
 
     # Always prompt the user for the desired absolute epoch start (ms).
