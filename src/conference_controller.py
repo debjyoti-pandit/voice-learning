@@ -1,5 +1,5 @@
-from email.utils import parsedate_to_datetime
 import os
+from email.utils import parsedate_to_datetime
 
 from dotenv import load_dotenv
 from flask import Blueprint, abort, current_app, jsonify, request, url_for
@@ -310,7 +310,7 @@ def conference_recording_events():
         try:
             # Incoming format: Tue, 15 Jul 2025 10:52:25 +0000'
             dt = parsedate_to_datetime(recording_start_time)
-            recording_start_time_epoch =dt.timestamp()
+            recording_start_time_epoch = dt.timestamp()
         except Exception as e:
             current_app.logger.error(
                 "Failed to parse recording_start_time: %s",
@@ -324,7 +324,9 @@ def conference_recording_events():
         )
         redis = current_app.config["redis"]
         conference_info_via_friendly_name = redis.get(friendly_name, {})
-        conference_info_via_friendly_name["recording_start_time"] = recording_start_time_epoch
+        conference_info_via_friendly_name["recording_start_time"] = (
+            recording_start_time_epoch
+        )
         redis[friendly_name] = conference_info_via_friendly_name
         current_app.logger.warning(
             "conference_info_via_friendly_name: %s",

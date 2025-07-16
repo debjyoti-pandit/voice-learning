@@ -1,5 +1,7 @@
 import logging
 import os
+from datetime import datetime
+from logging.handlers import RotatingFileHandler
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
@@ -71,6 +73,32 @@ _handler.setFormatter(
 )
 logging.root.setLevel(logging.DEBUG)
 logging.root.addHandler(_handler)
+
+# --- File logging setup ------------------------------------------------------
+# Also persist logs to a rotating file so that they survive past the console
+# session and do not grow without bound.
+# Directory where logs will be saved — configurable via ``LOG_DIR`` environment
+# variable (defaults to "logs/").
+log_dir = os.getenv("LOG_DIR", "logs")
+os.makedirs(log_dir, exist_ok=True)
+
+# Create a unique log file for every app start so that runs are kept separate.
+start_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+log_file_path = os.path.join(log_dir, f"app_{start_time_str}.log")
+
+# Use a rotating handler to cap individual log file size, even though each
+# start already gets its own file. This prevents extremely long sessions from
+# growing without bound while still retaining the per-run separation.
+file_handler = RotatingFileHandler(
+    log_file_path,
+    maxBytes=10 * 1024 * 1024,  # 10 MiB per log file
+    backupCount=3,  # Keep a few rotations within the same run
+)
+file_handler.setFormatter(
+    OptionalExtraFormatter("%(asctime)s %(levelname)s [%(module)s] %(message)s")
+)
+logging.root.addHandler(file_handler)
+# --- End file logging setup --------------------------------------------------
 
 # --- End logging setup -------------------------------------------------------
 
