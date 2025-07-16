@@ -6,3 +6,5 @@ watchdog
 requests
 pydub
 python-dateutil
+websockets==11.0.3
+deepgram-sdk==2.12.0
