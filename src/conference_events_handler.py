@@ -116,16 +116,16 @@ class ConferenceEventsHandler:
                 stream_audio_flag = str2bool(
                     call_info.get("stream_audio", False)
                 )
-                # if stream_audio_flag:
-                #     try:
-                #         client = current_app.config["twilio_client"]
-                #         client.calls(call_sid).streams(
-                #             participant_label
-                #         ).update(status="stopped")
-                #     except Exception as e:
-                #         current_app.logger.error(
-                #             f"No stream to stop on {call_sid} leg: {e}"
-                # )
+                if stream_audio_flag:
+                    try:
+                        client = current_app.config["twilio_client"]
+                        client.calls(call_sid).streams(
+                            participant_label
+                        ).update(status="stopped")
+                    except Exception as e:
+                        current_app.logger.error(
+                            f"No stream to stop on {call_sid} leg: {e}"
+                )
                 if role == "customer":
                     add_to_conference = call_info.get(
                         "add_to_conference", False
