@@ -6,6 +6,7 @@ from flask import Blueprint, current_app, jsonify, request, url_for
 from twilio.twiml.voice_response import Start, Stream, VoiceResponse
 
 from src.utils import xml_response
+import requests
 
 load_dotenv()
 
@@ -157,6 +158,33 @@ def answer_call():
     response.say("Thank you for calling! Have a great day.")
     caller_identity = None
     from_header = request.values.get("From") or ""
+    to_header = request.values.get("To") or ""
+
+    if to_header == os.getenv("AIVA_NUMBER"):
+        # make API call to https://api.retellai.com/v2/register-phone-call
+        payload = {
+            'metadata': {
+                'twilio_call_sid': request.values.get("CallSid"),
+            },
+            'agent_id': os.getenv("RETELL_AGENT_ID"),
+            'from_number': from_header,
+            'to_number': to_header,
+        }
+        headers = {
+            'Authorization': f'Bearer {os.getenv("RETELL_API_KEY")}',
+            'Content-Type': 'application/json'
+        }
+        retell_response = requests.post(
+            'https://api.retellai.com/v2/register-phone-call',
+            headers=headers,
+            json=payload
+        )
+        print(f"retell_response: {retell_response.json()}")
+        retell_call_id = retell_response.json()['call_id']
+        dial = response.dial()
+        dial.sip(f"sip:{retell_call_id}@5t4n6j0wnrl.sip.livekit.cloud")
+        return xml_response(response)
+
     if from_header.startswith("client:"):
         caller_identity = from_header[len("client:") :]
 
